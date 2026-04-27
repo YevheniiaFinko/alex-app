@@ -1,4 +1,4 @@
-# VIVE — Технічний план реалізації
+# Alex — Технічний план реалізації
 *Оновлено: квітень 2026 | + Аналіз конкурентів*
 
 ---
@@ -26,9 +26,9 @@
 
 ## Що вже відомо про код
 
-**Головний файл:** `/AI_WELLNESS/VIVE/vive-app.jsx` — 1446+ рядків
-**Точка входу:** `export default function ViveApp()` — рядок 1446
-**Білд:** Vite + React, запускається через `npx vite` у папці VIVE
+**Головний файл:** `/AI_WELLNESS/Alex/vive-app.jsx` — 1446+ рядків
+**Точка входу:** `export default function AlexApp()` — рядок 1446
+**Білд:** Vite + React, запускається через `npx vite` у папці Alex
 
 **Поточні екрани (змінна `screen`):**
 - `"welcome"` → Welcome
@@ -37,7 +37,7 @@
 - `"insight"` → Insight
 - `"dashboard"` → Dashboard
 
-**Поточний стан (useState у ViveApp):**
+**Поточний стан (useState у AlexApp):**
 ```js
 screen, setScreen
 profile, setProfile       // { name, birthYear, cycleDay, cycleLength, ... }
@@ -65,7 +65,7 @@ glass: "rgba(255,255,255,0.50)", glassDk: "rgba(20,28,18,0.65)"
 
 **Мета:** окремий розділ в профілі з аналізами / гаджетами / БАДами
 
-**Новий файл:** `/AI_WELLNESS/VIVE/HealthHub.jsx`
+**Новий файл:** `/AI_WELLNESS/Alex/HealthHub.jsx`
 
 **Структура компонента:**
 ```jsx
@@ -90,7 +90,7 @@ export default function HealthHub({ profile, lang, onBack }) {
 
 **Мета:** реальний AI для Insights і Health Hub
 
-**Файл:** `/AI_WELLNESS/VIVE/netlify/functions/insights.js`
+**Файл:** `/AI_WELLNESS/Alex/netlify/functions/insights.js`
 
 ```js
 const Anthropic = require("@anthropic-ai/sdk")
@@ -99,7 +99,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 exports.handler = async (event) => {
   const { phase, age, checkIn, goal, lang } = JSON.parse(event.body)
 
-  const prompt = `You are VIVE, an AI longevity coach for women 35+.
+  const prompt = `You are Alex, an AI longevity coach for women 35+.
 
 User profile:
 - Age: ${age}
@@ -158,7 +158,11 @@ Respond in ${lang === "uk" ? "Ukrainian" : "English"} with valid JSON only:
 
 ## СЕСІЯ 5 — Stripe paywall (~10% токенів)
 
-**Мета:** 7 днів безкоштовно → paywall → $9/міс
+**Мета:** 7 днів безкоштовно → paywall → $19/міс або $29 one-time
+
+**Канон ціни:** з `PRODUCT_STRATEGY.md` — два варіанти:
+- **$19/міс** — повна підписка (Daily check-in, AI insights, протоколи)
+- **$29 one-time** — Full Report без ongoing features (для тих хто не хоче підписку)
 
 **ВАЖЛИВО (з аналізу конкурентів — Atta):**
 Paywall повинен містити фото засновниці (Джейн) + особисте повідомлення.
@@ -167,12 +171,12 @@ Paywall повинен містити фото засновниці (Джейн)
 **Структура paywall екрану:**
 ```jsx
 // Верхня частина — фото Джейн + текст від першої особи:
-// "Привіт, я Джейн. Я будую VIVE тому що..."
+// "Привіт, я Джейн. Я будую Alex тому що..."
 // "Перший тиждень — від мене, безкоштовно."
 // "Якщо не полюбиш — скасуй. Жодних питань."
 
 // Нижня частина:
-// [12 місяців — $79/рік]  [1 місяць — $9/міс]  ← як у Atta
+// [Subscription — $19/міс]  [One-time Report — $29]
 // "Нагадаю за 2 дні до кінця пробного"
 // CTA: "Почати безкоштовно →"
 ```
@@ -280,11 +284,11 @@ const PROGESTER = [low, low, low, peak(luteal), drop]
 ```
 "Привіт, я Джейн.
 
-Я будую VIVE тому що коли мені було 42, 
+Я будую Alex тому що коли мені було 42, 
 я провела місяці намагаючись зрозуміти що відбувається 
 з моїм тілом — і ніхто не міг дати відповідь.
 
-VIVE — це те що я хотіла мати тоді.
+Alex — це те що я хотіла мати тоді.
 
 Перший тиждень від мене, безкоштовно.
 Якщо не відчуєш різниці — просто скасуй.
@@ -405,10 +409,10 @@ netlify deploy --prod
 
 ```bash
 # Запустити додаток
-cd /Users/janefinko/Desktop/Claud_Newyou/AI_WELLNESS/VIVE && npx vite
+cd /Users/janefinko/Desktop/Claud_Newyou/AI_WELLNESS/Alex && npx vite
 
 # Запустити з Netlify functions (сесія 3+)
-cd /Users/janefinko/Desktop/Claud_Newyou/AI_WELLNESS/VIVE && netlify dev
+cd /Users/janefinko/Desktop/Claud_Newyou/AI_WELLNESS/Alex && netlify dev
 ```
 
 ---
