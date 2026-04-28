@@ -107,6 +107,19 @@ const CAUSE_DATA = {
       uk: ["🥦 Хрестоцвіті (броколі, цвітна капуста) щодня — підтримують метаболізм естрогену", "💊 Вітамін D3 2000 МО + Омега-3 щодня — гормональний баланс і цілісність шкіри", "😴 Сон до опівночі — відновлення мозку відбувається в ранніх циклах сну"],
     },
   },
+  hormone_shift: {
+    icon: "🌷",
+    title: { en: "Estrogen fluctuation pattern", uk: "Патерн коливання естрогену" },
+    subtitle: { en: "Multiple body systems shifting at once", uk: "Кілька систем тіла змінюються одночасно" },
+    body: {
+      en: "Your symptoms across sleep, mood, energy, cycle, skin and joints often share one source — a gradual shift in hormone balance that can begin in the mid-30s and last several years. Not a diagnosis. Not connected to whether you've had children. Understanding it early is your edge.",
+      uk: "Твої симптоми у сні, настрої, енергії, циклі, шкірі та суглобах часто мають одне джерело — поступовий зсув гормонального балансу, який може починатись у середині 30-х і триває кілька років. Не діагноз. Не пов'язано з тим, чи ти народжувала. Розуміти це рано — твоя перевага.",
+    },
+    protocol: {
+      en: ["🥦 Phyto-estrogen foods daily (flax seeds, soy, chickpeas) — support fluctuating estrogen", "🏋️ Strength training 2–3x/week — protects bone density and muscle mass long-term", "😴 Anchor sleep: same bedtime every day — stabilises cortisol that drives night wakings"],
+      uk: ["🥦 Фітоестрогени щодня (лляне насіння, соя, нут) — підтримують коливання естрогену", "🏋️ Силові 2–3 рази/тиждень — захищає щільність кісток і м'язи у довгостроку", "😴 Якір сну: однаковий час лягати щодня — стабілізує кортизол, що провокує нічні пробудження"],
+    },
+  },
   protein: {
     icon: "💪",
     title: { en: "Protein & Iron Deficiency", uk: "Дефіцит білку і заліза" },
@@ -148,12 +161,33 @@ const CAUSE_DATA = {
   },
 }
 
+// ─── PERIMENOPAUSE / HORMONE SHIFT (MRS / Peri-SS based) ──────────────────────
+// 8-question scale, each 0–3 (none / mild / moderate / severe). Sum 0–24.
+// Detection: score >= 8 AND age 35–55. Wellness signal, not a diagnosis.
+function getHormoneShiftScore(profile) {
+  const a = profile.hormoneShiftAnswers
+  if (!a || profile.hormoneShiftIntro !== "yes") return 0
+  return Object.values(a).reduce((sum, v) => sum + (parseInt(v) || 0), 0)
+}
+
+function isHormoneShiftDetected(profile) {
+  if (!profile.birthYear) return false
+  const age = calcAge(profile.birthYear)
+  if (age < 35 || age > 55) return false
+  return getHormoneShiftScore(profile) >= 8
+}
+
 function getRootCauses(profile) {
   const skin = profile.skinSymptoms || []
   const hair = profile.hairSymptoms || []
   const body = profile.bodySymptoms || []
   const age  = profile.birthYear ? calcAge(profile.birthYear) : 35
-  const s    = { cortisol: 0, estrogen: 0, protein: 0, pcos: 0, inflammation: 0 }
+  const s    = { cortisol: 0, estrogen: 0, protein: 0, pcos: 0, inflammation: 0, hormone_shift: 0 }
+
+  if (isHormoneShiftDetected(profile)) {
+    const score = getHormoneShiftScore(profile)
+    s.hormone_shift = 4 + Math.floor(score / 4)
+  }
 
   if ((profile.stressLevel || 5) >= 7) s.cortisol += 2
   if ((profile.stressLevel || 5) >= 5) s.cortisol += 1
@@ -437,20 +471,20 @@ function WelcomeScreen({ onStart, lang, onLangToggle }) {
       {/* Hero */}
       <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 28px" }}>
         <h1 style={{ fontSize: 38, fontWeight: 900, lineHeight: 1.08, margin: "0 0 3px", letterSpacing: "-1.5px", color: "#1A2433" }}>
-          {uk ? "AI-подруга" : "AI friend"}
+          {uk ? "Твій AI" : "Your AI"}
         </h1>
         <h1 style={{ fontSize: 38, fontWeight: 900, lineHeight: 1.08, margin: "0 0 16px", letterSpacing: "-1.5px", background: "linear-gradient(135deg, #4A9EDF, #4ECBA8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-          {uk ? "у світі біохакінгу" : "in biohacking"}
+          {uk ? "longevity-тренер" : "longevity coach"}
         </h1>
 
         <div style={{ fontSize: 11, fontWeight: 800, color: "#4ECBA8", letterSpacing: "2px", textTransform: "uppercase", marginBottom: 16 }}>
-          {uk ? "Біохакінг створений для жіночого тіла" : "Biohacking built for the female body"}
+          {uk ? "Для жінок 35+" : "For women 35+"}
         </div>
 
         <p style={{ fontSize: 15, lineHeight: 1.55, color: "#6B7A8D", margin: 0, maxWidth: 300 }}>
           {uk
-            ? "Твій персональний wellness-протокол. Синхронізований з циклом. Оновлюється щодня."
-            : "Your personal wellness protocol. Synced with your cycle. Updated every day."}
+            ? "5 симптомів — 1 причина. Шкіра, волосся, гормони, енергія — пов'язані."
+            : "5 symptoms, 1 root cause. Skin, hair, hormones, energy — connected."}
         </p>
       </div>
 
@@ -469,6 +503,29 @@ function WelcomeScreen({ onStart, lang, onLangToggle }) {
 
 // ─── SCREEN 2: BODY AUDIT ────────────────────────────────────────────────────
 const AUDIT_STEPS = ["skin", "hair", "body", "sleep", "nutrition", "cycle", "goal"]
+
+// Perimenopause / hormone-shift opt-in (Peri-SS / MRS based)
+const HORMONE_INTRO = [
+  { id: "yes",             en: "Yes, I notice changes",          uk: "Так, я помічаю зміни" },
+  { id: "not_really",      en: "Not really",                      uk: "Не дуже" },
+  { id: "havent_thought",  en: "Haven't thought about it",        uk: "Не думала про це" },
+]
+const HORMONE_LEVELS = [
+  { id: 0, en: "None",     uk: "Немає" },
+  { id: 1, en: "Mild",     uk: "Легко" },
+  { id: 2, en: "Moderate", uk: "Помірно" },
+  { id: 3, en: "Severe",   uk: "Сильно" },
+]
+const HORMONE_QUESTIONS = [
+  { id: "sleep",     en: "Sleep quality changes",         uk: "Зміни в якості сну" },
+  { id: "brainfog",  en: "Brain fog or concentration",     uk: "Мозковий туман, концентрація" },
+  { id: "mood",      en: "Mood swings or anxiety",         uk: "Перепади настрою або тривога" },
+  { id: "energy",    en: "Energy through the day",         uk: "Енергія протягом дня" },
+  { id: "cycle",     en: "Cycle regularity",               uk: "Регулярність циклу" },
+  { id: "skin",      en: "Skin or hair changes",           uk: "Зміни шкіри або волосся" },
+  { id: "joints",    en: "Joint or muscle aches",          uk: "Болі в суглобах або м'язах" },
+  { id: "flushes",   en: "Hot flushes or night sweats",    uk: "Припливи або нічна пітливість" },
+]
 
 const OPTIONS = {
   skin: [
@@ -575,6 +632,8 @@ function BodyAudit({ profile, setProfile, onDone, lang }) {
     lastPeriodDate: profile.lastPeriodDate || "",
     cycleLength:    profile.cycleLength  || "28",
     contraception:profile.contraception|| "none",
+    hormoneShiftIntro:   profile.hormoneShiftIntro   || "",
+    hormoneShiftAnswers: profile.hormoneShiftAnswers || {},
     mainGoal:     profile.mainGoal     || "",
   })
 
@@ -740,6 +799,54 @@ function BodyAudit({ profile, setProfile, onDone, lang }) {
                 <Chip key={o.id} active={d.contraception === o.id} onClick={() => setD(x => ({ ...x, contraception: o.id }))}>{o[L]}</Chip>
               ))}
             </div>
+
+            {/* Hormone-shift opt-in (Step A) */}
+            <div style={{ height: 28 }} />
+            <div style={{ ...S.card, padding: "16px 18px", background: "rgba(78,203,168,0.06)", border: "1px solid rgba(78,203,168,0.18)", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#4ECBA8", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 6 }}>
+                {uk ? "Опційний блок" : "Optional"}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#1A2433", marginBottom: 4, lineHeight: 1.45 }}>
+                {uk ? "Чи помічаєш зміни порівняно з тим, що було 5 років тому?" : "Have you noticed shifts vs 5 years ago?"}
+              </div>
+              <div style={{ fontSize: 12, color: "#6B7A8D", marginBottom: 12, lineHeight: 1.5 }}>
+                {uk ? "Допоможе персоналізувати протокол точніше." : "Helps us personalise your protocol more precisely."}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {HORMONE_INTRO.map(o => (
+                  <Chip key={o.id} active={d.hormoneShiftIntro === o.id} onClick={() => setD(x => ({ ...x, hormoneShiftIntro: o.id, hormoneShiftAnswers: o.id === "yes" ? x.hormoneShiftAnswers : {} }))} style={{ textAlign: "left" }}>{o[L]}</Chip>
+                ))}
+              </div>
+            </div>
+
+            {/* Hormone-shift detailed (Step B) — shown only if user selected "yes" */}
+            {d.hormoneShiftIntro === "yes" && (
+              <div style={{ marginBottom: 16 }}>
+                <SectionLabel>{uk ? "Як сильно це проявляється?" : "How much do you notice these?"}</SectionLabel>
+                {HORMONE_QUESTIONS.map(q => (
+                  <div key={q.id} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1A2433", marginBottom: 8 }}>{q[L]}</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {HORMONE_LEVELS.map(lv => (
+                        <Chip
+                          key={lv.id}
+                          active={d.hormoneShiftAnswers[q.id] === lv.id}
+                          onClick={() => setD(x => ({ ...x, hormoneShiftAnswers: { ...x.hormoneShiftAnswers, [q.id]: lv.id } }))}
+                          style={{ padding: "8px 12px", fontSize: 12 }}
+                        >
+                          {lv[L]}
+                        </Chip>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: "#6B7A8D", lineHeight: 1.55, marginTop: 4 }}>
+                  {uk
+                    ? "Шкала на основі MRS / Peri-SS — wellness-сигнал, не діагноз."
+                    : "Scale based on MRS / Peri-SS — wellness signal, not a diagnosis."}
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -852,14 +959,16 @@ const PHASE_NAMES = {
   luteal:     { en: "Luteal",     uk: "Лютеальна",    emoji: "🍂" },
 }
 
-function ReportScreen({ profile, onDone, lang }) {
-  const uk       = lang === "uk"
-  const L        = uk ? "uk" : "en"
-  const causes   = getRootCauses(profile)
-  const phaseKey = getPhase(parseInt(profile.cycleDay) || 14, parseInt(profile.cycleLength) || 28)
-  const beauty   = generateBeautyRoutine(profile, uk)
-  const protocol = getDefaultProtocol(uk)
-  const phase    = PHASE_NAMES[phaseKey]
+function ReportScreen({ profile, onDone, onChat, lang }) {
+  const uk           = lang === "uk"
+  const L            = uk ? "uk" : "en"
+  const causes       = getRootCauses(profile)
+  const phaseKey     = getPhase(parseInt(profile.cycleDay) || 14, parseInt(profile.cycleLength) || 28)
+  const beauty       = generateBeautyRoutine(profile, uk)
+  const protocol     = getDefaultProtocol(uk)
+  const phase        = PHASE_NAMES[phaseKey]
+  const hormoneShift = isHormoneShiftDetected(profile)
+  const hormoneCause = hormoneShift ? CAUSE_DATA.hormone_shift : null
 
   const weekTasks = uk ? [
     { time: "Ранок", action: "Магній гліцинат 300мг + D3 2000МО з їжею" },
@@ -923,6 +1032,64 @@ function ReportScreen({ profile, onDone, lang }) {
             </Card>
           )
         })}
+
+        {/* Section: Hormone shifts (only when detected) */}
+        {hormoneShift && hormoneCause && (
+          <>
+            <div style={{ height: 24 }} />
+            <SectionLabel>{uk ? "ГОРМОНАЛЬНІ ЗМІНИ ЯКІ ТИ ПОМІЧАЄШ" : "HORMONE SHIFTS YOU'RE NOTICING"}</SectionLabel>
+
+            <Card style={{ marginBottom: 12, background: "linear-gradient(135deg, rgba(78,203,168,0.06), rgba(74,158,223,0.06))", border: "1px solid rgba(78,203,168,0.18)" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#4ECBA8", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 10 }}>
+                {uk ? "Що відбувається" : "What's happening"}
+              </div>
+              <p style={{ fontSize: 13, lineHeight: 1.65, color: "#1A2433", margin: 0 }}>
+                {uk ? (
+                  <>Твоє тіло поступово змінює гормональний баланс — це називається <b>перименопауза</b>. Це нормальна фаза, яка може початись у 35–45 років і триває кілька років. <b>Не діагноз. Не пов'язано з тим, чи ти народжувала.</b></>
+                ) : (
+                  <>Your body is gradually shifting its hormone balance — this is called <b>perimenopause</b>. It's a normal phase that can start at 35–45 and last several years. <b>Not a diagnosis. Not connected to whether you've had children.</b></>
+                )}
+              </p>
+            </Card>
+
+            <Card style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#4A9EDF", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 10 }}>
+                {uk ? "Чому це важливо зараз" : "Why it matters now"}
+              </div>
+              <p style={{ fontSize: 13, lineHeight: 1.65, color: "#1A2433", margin: 0 }}>
+                {uk
+                  ? "Розуміння цих змін — твоя перевага. Більшість жінок чекає 2.6 роки, щоб лікар це назвав. Ти бачиш це раніше і можеш діяти."
+                  : "Understanding these shifts is your edge. Most women wait 2.6 years for a doctor to name this. You're seeing it earlier and can act."}
+              </p>
+            </Card>
+
+            <Card style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#F59E3F", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 10 }}>
+                {uk ? "Що ти можеш робити" : "What you can do"}
+              </div>
+              {hormoneCause.protocol[L].map((p, j) => (
+                <div key={j} style={{ fontSize: 13, color: "#1A2433", marginBottom: j < 2 ? 10 : 14, lineHeight: 1.55 }}>{p}</div>
+              ))}
+              {onChat && (
+                <button onClick={onChat} style={{ ...S.btnGhost, padding: "12px 20px", fontSize: 14 }}>
+                  💬 {uk ? "Запитай Alex →" : "Ask Alex →"}
+                </button>
+              )}
+            </Card>
+
+            <p style={{ fontSize: 14, fontWeight: 700, textAlign: "center", color: "#4A9EDF", margin: "16px 12px 8px", lineHeight: 1.5 }}>
+              {uk
+                ? "Це не різні проблеми. Це одна історія."
+                : "These aren't different problems. They're one story."}
+            </p>
+
+            <p style={{ fontSize: 11, color: "#6B7A8D", lineHeight: 1.6, margin: "0 4px 8px", textAlign: "center" }}>
+              {uk
+                ? "Alex — wellness-coach, не медицина. Якщо симптоми сильні — поговори з лікарем. Шкала на основі валідованих MRS / Peri-SS, інтерпретуємо як wellness-сигнал, не діагноз."
+                : "Alex is a wellness coach, not medicine. If symptoms are severe — talk to your doctor. Scale based on validated MRS / Peri-SS, interpreted as a wellness signal, not a diagnosis."}
+            </p>
+          </>
+        )}
 
         {/* Section: Week protocol */}
         <div style={{ height: 24 }} />
@@ -1761,7 +1928,7 @@ export default function App() {
     <PaywallScreen profile={profile} lang={lang} onBack={() => setScreen("audit")} onContinueFree={() => setScreen("report")} />
   )
   if (screen === "report") return (
-    <ReportScreen profile={profile} lang={lang} onDone={() => setScreen("dashboard")} />
+    <ReportScreen profile={profile} lang={lang} onDone={() => setScreen("dashboard")} onChat={() => setScreen("chat")} />
   )
   if (screen === "dashboard") return (
     <DashboardScreen profile={profile} history={history} lang={lang}
