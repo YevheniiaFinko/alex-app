@@ -1,7 +1,7 @@
 # Alex — Технічний план
 *AI Longevity Coach для жінок 35+ | Apple Glassmorphism + Multi-screen Flow*
 
-*Останнє оновлення: 27 квітня 2026 (синхронізовано з vive-app.jsx)*
+*Останнє оновлення: 28 квітня 2026 (синхронізовано з alex-app.jsx)*
 
 ---
 
@@ -10,7 +10,8 @@
 **Live URL:** https://alex-ai-coach.vercel.app/
 **GitHub:** https://github.com/YevheniiaFinko/alex-app
 **Tech stack:** Vite + React 18 + Vercel
-**Файл коду:** `vive-app.jsx` (1785+ рядків) — назва файлу історична, всередині додаток "Alex"
+**Файл коду:** `alex-app.jsx` (1785 рядків)
+**Примітка:** ключі `localStorage` досі мають префікс `vive_` (`vive_profile`, `vive_history`, `vive_lang`) — історичні, не змінюємо щоб не загубити дані ранніх юзерів.
 
 ---
 
@@ -50,11 +51,11 @@
 
 ```js
 {
-  energy: 0-10,    // CustomSlider
-  sleep:  0-10,    // CustomSlider
-  mood:   0-10,    // CustomSlider
-  water:  0-10,    // CustomSlider
-  move:   yes/no,  // toggle
+  energy: 1-10,    // CustomSlider, відображається як % (n × 10)
+  sleep:  4-10,    // CustomSlider, відображається як години (n h)
+  mood:   1-10,    // CustomSlider, з emoji 😔/😐/😊
+  water:  1-10,    // CustomSlider, склянки (gl.)
+  move:   true/false, // Chip yes/no
 }
 ```
 
@@ -241,4 +242,4 @@ git add . && git commit -m "..." && git push origin main
 
 ---
 
-*Цей документ синхронізований з кодом `vive-app.jsx`. Замінити цей файл при кардинальних змінах архітектури.*
+*Цей документ синхронізований з кодом `alex-app.jsx`. Замінити цей файл при кардинальних змінах архітектури.*
