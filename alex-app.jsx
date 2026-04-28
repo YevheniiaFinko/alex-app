@@ -1618,7 +1618,7 @@ function CustomSlider({ min, max, value, onChange }) {
 // ─── SCREEN 7: CHECK-IN ───────────────────────────────────────────────────────
 function CheckInScreen({ history, setHistory, lang, onBack }) {
   const uk = lang === "uk"
-  const [vals, setVals] = useState({ energy: 5, sleep: 7, mood: 5, water: 6, move: null })
+  const [vals, setVals] = useState({ energy: 5, sleep: 7, mood: 5, water: 6, move: null, proteinHit: null, strengthDone: null })
   const [saved, setSaved] = useState(false)
 
   const doneToday = history.some(h => h.date?.startsWith(todayStr()))
@@ -1698,6 +1698,22 @@ function CheckInScreen({ history, setHistory, lang, onBack }) {
           <div style={{ display: "flex", gap: 10 }}>
             <Chip active={vals.move === true}  onClick={() => setVals(v => ({ ...v, move: true }))}  style={{ flex: 1, textAlign: "center" }}>✓ {uk ? "Так" : "Yes"}</Chip>
             <Chip active={vals.move === false} onClick={() => setVals(v => ({ ...v, move: false }))} style={{ flex: 1, textAlign: "center" }}>✗ {uk ? "Ні" : "No"}</Chip>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>{uk ? "25г+ білку на сніданок?" : "Got 25g+ protein at breakfast?"}</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Chip active={vals.proteinHit === true}  onClick={() => setVals(v => ({ ...v, proteinHit: true }))}  style={{ flex: 1, textAlign: "center" }}>✓ {uk ? "Так" : "Yes"}</Chip>
+            <Chip active={vals.proteinHit === false} onClick={() => setVals(v => ({ ...v, proteinHit: false }))} style={{ flex: 1, textAlign: "center" }}>✗ {uk ? "Ні" : "No"}</Chip>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>{uk ? "Силові тренування сьогодні?" : "Did strength training today?"}</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Chip active={vals.strengthDone === true}  onClick={() => setVals(v => ({ ...v, strengthDone: true }))}  style={{ flex: 1, textAlign: "center" }}>✓ {uk ? "Так" : "Yes"}</Chip>
+            <Chip active={vals.strengthDone === false} onClick={() => setVals(v => ({ ...v, strengthDone: false }))} style={{ flex: 1, textAlign: "center" }}>✗ {uk ? "Ні" : "No"}</Chip>
           </div>
         </div>
       </div>
