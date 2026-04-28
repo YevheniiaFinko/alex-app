@@ -194,6 +194,94 @@ const CAUSE_DATA = {
   },
 }
 
+// ─── CYCLE PHASE PROTOCOLS (wellness exploration, not medical advice) ────────
+const CYCLE_PHASE_PROTOCOLS = {
+  menstrual: {
+    nutrition: {
+      en: ["Iron-rich foods: spinach, lentils, grass-fed beef", "Warm soups + cooked roots — easier to digest", "Dark chocolate 70%+ for magnesium"],
+      uk: ["Залізо: шпинат, сочевиця, яловичина", "Теплі супи й коренеплоди — легше травляться", "Темний шоколад 70%+ для магнію"],
+    },
+    movement: {
+      en: ["Gentle restorative yoga 20 min", "Slow walks outdoors — daylight helps mood", "Stretching + foam rolling"],
+      uk: ["Ніжна відновлювальна йога 20 хв", "Повільні прогулянки на свіжому повітрі", "Розтяжка + foam rolling"],
+    },
+    rest: {
+      en: ["8–9h sleep — prioritise this week", "Avoid caffeine after noon", "Hot bath with epsom salts before bed"],
+      uk: ["8–9 годин сну — пріоритет цього тижня", "Без кави після обіду", "Гаряча ванна з епсомом перед сном"],
+    },
+    beauty: {
+      en: ["Skip retinol and acids — barrier is sensitive", "Hydration layers: hyaluronic + ceramides", "Lip balm + hand cream — dryness peaks"],
+      uk: ["Без ретинолу й кислот — бар'єр чутливий", "Шари зволоження: гіалуронка + церамід", "Бальзам для губ + крем для рук — пік сухості"],
+    },
+  },
+  follicular: {
+    nutrition: {
+      en: ["Fermented foods: kefir, kimchi, sauerkraut", "Sprouted grains + leafy greens", "Lean protein 25–30g per meal"],
+      uk: ["Ферментовані: кефір, кімчі, квашена капуста", "Пророщені злаки + листяна зелень", "Легкий білок 25–30г за прийом"],
+    },
+    movement: {
+      en: ["Cardio or dance 30–40 min — energy is rising", "Try a new class — coordination peaks now", "Strength training 2–3 sets, moderate"],
+      uk: ["Кардіо або танці 30–40 хв — енергія зростає", "Спробуй нове заняття — координація на піку", "Силові 2–3 підходи, помірно"],
+    },
+    rest: {
+      en: ["7–8h sleep — natural energy means lighter rest", "Morning sunlight 10 min sets circadian", "Short focused breaks — Pomodoro works well"],
+      uk: ["7–8 годин — природна енергія, легший відпочинок", "Ранкове сонце 10 хв налаштовує циркадний ритм", "Короткі фокусовані перерви — Pomodoro"],
+    },
+    beauty: {
+      en: ["BHA serum 2–3x — pores cooperate now", "Vitamin C in the morning under SPF", "Light retinol every other night if tolerated"],
+      uk: ["BHA сироватка 2–3х — пори піддаються", "Вітамін С зранку під SPF", "Легкий ретинол через ніч, якщо переноситься"],
+    },
+  },
+  ovulation: {
+    nutrition: {
+      en: ["Anti-inflammatory: salmon, walnuts, olive oil", "Cruciferous veggies — support estrogen clearance", "Berries + dark leafy greens for antioxidants"],
+      uk: ["Протизапальне: лосось, волоські горіхи, олія", "Хрестоцвіті — допомагають метаболізму естрогену", "Ягоди + темна зелень як антиоксиданти"],
+    },
+    movement: {
+      en: ["HIIT or strength training 30–45 min", "Group workouts feel best now — social peak", "Track PRs — strength is highest this phase"],
+      uk: ["HIIT або силові 30–45 хв", "Групові тренування на піку соціальної енергії", "Відстежуй рекорди — сила найвища"],
+    },
+    rest: {
+      en: ["7–8h sleep — wind down with breathwork", "Limit late screens — ovulation hormones disturb sleep", "Cooler bedroom 18–19°C for deep sleep"],
+      uk: ["7–8 годин — вечірня дихальна практика", "Менше екранів увечері — гормони овуляції збивають сон", "Прохолодна спальня 18–19°C"],
+    },
+    beauty: {
+      en: ["Light, oil-free moisturiser — skin is dewy", "Reapply SPF — UV sensitivity is higher", "Gentle exfoliation — AHA 5–7%"],
+      uk: ["Легкий безмасляний крем — шкіра сяє", "Оновлюй SPF — чутливість до УФ вища", "Ніжний пілінг — AHA 5–7%"],
+    },
+  },
+  luteal: {
+    nutrition: {
+      en: ["Magnesium-rich foods: pumpkin seeds, dark chocolate, bananas", "Complex carbs at dinner — stabilise mood + sleep", "Reduce salt + alcohol — bloating peaks"],
+      uk: ["Магній: гарбузове насіння, темний шоколад, банани", "Складні вуглеводи на вечерю — стабілізують настрій і сон", "Менше солі та алкоголю — пік набряків"],
+    },
+    movement: {
+      en: ["Pilates or strength — moderate intensity", "Walking 30–45 min in nature lowers cortisol", "Skip HIIT — cortisol is already elevated"],
+      uk: ["Пілатес або силові — помірна інтенсивність", "Прогулянка 30–45 хв на природі знижує кортизол", "Без HIIT — кортизол уже підвищений"],
+    },
+    rest: {
+      en: ["8–9h sleep — body needs more this phase", "Magnesium glycinate 300mg before bed", "Anchor bedtime — same hour every night"],
+      uk: ["8–9 годин сну — тілу треба більше цієї фази", "Магній гліцинат 300мг перед сном", "Якір сну — однаковий час щодня"],
+    },
+    beauty: {
+      en: ["Niacinamide + peptides — skip acids and retinol", "Extra hydration — hormonal dryness rises", "Cold gua sha or jade roller for puffiness"],
+      uk: ["Ніацинамід + пептиди — без кислот і ретинолу", "Більше зволоження — гормональна сухість зростає", "Холодний gua sha або роллер від набряків"],
+    },
+  },
+}
+
+function generatePhaseProtocol(profile, phaseKey, uk) {
+  const L  = uk ? "uk" : "en"
+  const p  = CYCLE_PHASE_PROTOCOLS[phaseKey] || CYCLE_PHASE_PROTOCOLS.follicular
+  const pick = (cat) => p[cat][L].slice(0, 2).map((line, i) => ({ id: `${phaseKey}_${cat}_${i}`, text: line }))
+  return {
+    nutrition: pick("nutrition"),
+    movement:  pick("movement"),
+    rest:      pick("rest"),
+    beauty:    pick("beauty"),
+  }
+}
+
 // ─── PERIMENOPAUSE / HORMONE SHIFT (MRS / Peri-SS based) ──────────────────────
 // 8-question scale, each 0–3 (none / mild / moderate / severe). Sum 0–24.
 // Detection: score >= 8 AND age 35–55. Wellness signal, not a diagnosis.
@@ -271,6 +359,11 @@ function generateBeautyRoutine(profile, uk) {
   const age         = profile.birthYear ? calcAge(profile.birthYear) : 35
   const phase       = getPhase(calcCycleDay(profile), parseInt(profile.cycleLength) || 28)
   const activePhase = phase === "follicular" || phase === "ovulation"
+  const hormoneShift = isHormoneShiftDetected(profile)
+  const phaseBeautyTips = (CYCLE_PHASE_PROTOCOLS[phase] || CYCLE_PHASE_PROTOCOLS.follicular).beauty[uk ? "uk" : "en"]
+  const phaseStep = hormoneShift
+    ? { step: uk ? "Фазовий бустер" : "Phase booster", product: uk ? "Гідратація + пептиди — пріоритет при гормональному зсуві" : "Hydration + peptides — priority during hormone shift" }
+    : { step: uk ? "Фазовий фокус" : "Phase focus", product: phaseBeautyTips[0] }
 
   if (skin.includes("acne")) return {
     morning: [
@@ -281,6 +374,7 @@ function generateBeautyRoutine(profile, uk) {
     evening: [
       { step: uk ? "Подвійне очищення" : "Double cleanse", product: uk ? "Міцелярна вода → гелевий засіб" : "Micellar water → gel cleanser" },
       { step: uk ? "Актив"      : "Active",   product: activePhase ? (uk ? "BHA сироватка (Cosrx, Paula's Choice)" : "BHA serum (Cosrx, Paula's Choice)") : (uk ? "Ніацинамід — без кислот у цю фазу" : "Niacinamide only — no acids this phase") },
+      phaseStep,
       { step: uk ? "Зволоження" : "Moisturise", product: uk ? "Легкий крем з ніацинамідом" : "Light cream with niacinamide" },
     ],
   }
@@ -294,6 +388,7 @@ function generateBeautyRoutine(profile, uk) {
     evening: [
       { step: uk ? "Очищення"  : "Cleanse", product: uk ? "Бальзам або олія для очищення" : "Cleansing balm or oil" },
       { step: uk ? "Актив"     : "Active",  product: activePhase ? (age >= 35 ? (uk ? "Ретинол 0.025–0.05%" : "Retinol 0.025–0.05%") : (uk ? "Пептиди" : "Peptides")) : (uk ? "Пептиди — без ретинолу в цю фазу" : "Peptides — no retinol this phase") },
+      phaseStep,
       { step: uk ? "Живлення"  : "Nourish", product: uk ? "Щільний крем з церамідами або сквалановою олією" : "Rich ceramide cream or squalane oil" },
     ],
   }
@@ -307,6 +402,7 @@ function generateBeautyRoutine(profile, uk) {
     evening: [
       { step: uk ? "Очищення"   : "Cleanse",   product: uk ? "Той самий засіб або бальзам" : "Same cleanser or cleansing balm" },
       { step: uk ? "Актив"      : "Active",     product: activePhase ? (uk ? "Ретинол 0.05% або AHA 5–10%" : "Retinol 0.05% or AHA 5–10%") : (uk ? "Пептиди або ніацинамід — без кислот" : "Peptides or niacinamide — no acids") },
+      phaseStep,
       { step: uk ? "Зволоження" : "Moisturise", product: uk ? "Крем з пептидами або гіалуроновою кислотою" : "Peptide or hyaluronic acid moisturiser" },
     ],
   }
@@ -1230,6 +1326,15 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
   const tasks        = getTimeTasks(timeFilter, phaseKey, uk)
   const protocol     = getDefaultProtocol(uk)
   const longevity    = calcLongevityMarkers(history)
+  const phaseProtocol = generatePhaseProtocol(profile, phaseKey, uk)
+  const [phaseTab, setPhaseTab] = useState("nutrition")
+  const phaseColor   = phaseRec.color
+  const phaseTabs = [
+    { key: "nutrition", icon: "🥗", label_uk: "Харчування", label_en: "Nutrition" },
+    { key: "movement",  icon: "🏃", label_uk: "Рух",        label_en: "Movement" },
+    { key: "rest",      icon: "😴", label_uk: "Відпочинок", label_en: "Rest" },
+    { key: "beauty",    icon: "✨", label_uk: "Краса",      label_en: "Beauty" },
+  ]
   const milestoneStreak = (streak === 30 || streak === 60 || streak === 90) ? streak : null
   const [milestoneSeen, setMilestoneSeen] = useState(() =>
     milestoneStreak ? lsGet("vive_milestone_" + milestoneStreak + "_seen", false) : true
@@ -1439,6 +1544,37 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
             </div>
           )
         })}
+
+        {/* Phase Protocol */}
+        <SectionLabel>{uk ? "ПРОТОКОЛ ФАЗИ" : "PHASE PROTOCOL"}</SectionLabel>
+        <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+          {phaseTabs.map(t => {
+            const isActive = phaseTab === t.key
+            return (
+              <button key={t.key} onClick={() => setPhaseTab(t.key)} style={{
+                flex: "1 1 calc(50% - 3px)", padding: "8px 10px", borderRadius: 12, fontSize: 12, fontWeight: isActive ? 800 : 600,
+                border: isActive ? `1.5px solid ${phaseColor}` : "1.5px solid rgba(107,122,141,0.18)",
+                background: isActive ? `${phaseColor}18` : "rgba(255,255,255,0.6)",
+                color: isActive ? phaseColor : "#6B7A8D", cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                <span>{t.icon}</span>
+                <span>{uk ? t.label_uk : t.label_en}</span>
+              </button>
+            )
+          })}
+        </div>
+        <Card style={{ marginBottom: 24, border: `1px solid ${phaseColor}30`, background: `linear-gradient(135deg, ${phaseColor}08, ${phaseColor}03)` }}>
+          {phaseProtocol[phaseTab].map(item => (
+            <div key={item.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: "1px solid rgba(107,122,141,0.08)" }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: phaseColor, marginTop: 8, flexShrink: 0 }} />
+              <div style={{ fontSize: 13, color: "#1A2433", lineHeight: 1.5 }}>{item.text}</div>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: "#6B7A8D", marginTop: 10, lineHeight: 1.5 }}>
+            {uk ? "Wellness exploration — не медична порада." : "Wellness exploration — not medical advice."}
+          </div>
+        </Card>
 
         {/* Ask Alex */}
         <button onClick={onChat} style={{ ...S.card, marginTop: 8, marginBottom: 24, width: "100%", border: "1.5px solid rgba(74,158,223,0.25)", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, textAlign: "left", background: "rgba(74,158,223,0.04)", boxSizing: "border-box" }}>
