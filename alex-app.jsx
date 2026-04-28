@@ -53,6 +53,20 @@ function calcStreak(history, activityDays) {
 
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 
+// Longevity score (0–100) — 4 wellness markers from last 7 check-ins
+function calcLongevityMarkers(history) {
+  const last7 = (history || []).slice(-7)
+  if (!last7.length) return { sleepAvg: 0, proteinHits: 0, strengthCount: 0, stressDays: 0, score: 0, sample: 0 }
+  const sleepAvg      = last7.reduce((acc, h) => acc + (parseFloat(h.sleep) || 0), 0) / last7.length
+  const proteinHits   = last7.filter(h => h.proteinHit).length
+  const strengthCount = last7.filter(h => h.strengthDone).length
+  const stressDays    = last7.filter(h => (parseInt(h.mood) || 5) < 5).length
+  // weighted score, normalised to 0–100
+  const raw = sleepAvg * 10 + proteinHits * 8 + strengthCount * 12 + (7 - stressDays) * 6
+  const score = Math.max(0, Math.min(100, Math.round(raw / 2.74)))
+  return { sleepAvg, proteinHits, strengthCount, stressDays, score, sample: last7.length }
+}
+
 function calcCycleDay(profile) {
   if (profile.lastPeriodDate) {
     const start = new Date(profile.lastPeriodDate + "T12:00:00Z")
@@ -1196,6 +1210,7 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
   const [timeFilter, setTimeFilter] = useState("30")
   const tasks        = getTimeTasks(timeFilter, phaseKey, uk)
   const protocol     = getDefaultProtocol(uk)
+  const longevity    = calcLongevityMarkers(history)
 
   const [done, setDone] = useState(() => {
     const saved = lsGet("vive_tasks_done", { date: "", done: [] })
@@ -1294,6 +1309,45 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
             {streak === 0 ? (uk ? "Зроби перший check-in!" : "Complete your first check-in!") : streak < 7 ? (uk ? "Ти формуєш звичку 🌱" : "You're building a habit 🌱") : (uk ? "Відмінна робота! 🔥" : "Outstanding! 🔥")}
           </div>
         </Card>
+
+        {/* Longevity Markers */}
+        {longevity.sample > 0 && (
+          <Card style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#6B7A8D", letterSpacing: "1.2px", textTransform: "uppercase" }}>
+                  {uk ? "Longevity маркери" : "Longevity markers"}
+                </div>
+                <div style={{ fontSize: 11, color: "#6B7A8D", marginTop: 2 }}>
+                  {uk ? `Останні ${longevity.sample} ${longevity.sample === 1 ? "день" : longevity.sample < 5 ? "дні" : "днів"}` : `Last ${longevity.sample} ${longevity.sample === 1 ? "day" : "days"}`}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <div style={{ fontSize: 30, fontWeight: 900, color: "#4ECBA8", letterSpacing: "-1px" }}>{longevity.score}</div>
+                <div style={{ fontSize: 13, color: "#6B7A8D", fontWeight: 700 }}>/100</div>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {[
+                { icon: "😴", label: uk ? "Сон сер." : "Avg sleep",      val: `${longevity.sleepAvg.toFixed(1)}h` },
+                { icon: "💪", label: uk ? "Білок 25г+" : "Protein hits",  val: `${longevity.proteinHits}/${longevity.sample}` },
+                { icon: "🏋️", label: uk ? "Силові"   : "Strength",        val: `${longevity.strengthCount}/${longevity.sample}` },
+                { icon: "🧘", label: uk ? "Стрес-дні" : "Stress days",    val: `${longevity.stressDays}/${longevity.sample}` },
+              ].map(m => (
+                <div key={m.label} style={{ background: "rgba(74,158,223,0.05)", borderRadius: 12, padding: "10px 12px", border: "1px solid rgba(74,158,223,0.1)" }}>
+                  <div style={{ fontSize: 16, marginBottom: 2 }}>{m.icon}</div>
+                  <div style={{ fontSize: 10, color: "#6B7A8D", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>{m.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#1A2433", marginTop: 2 }}>{m.val}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "#6B7A8D", marginTop: 12, lineHeight: 1.5 }}>
+              {uk
+                ? "Сон, білок і силові — три маркери, які найсильніше впливають на довгострокове здоров'я після 35."
+                : "Sleep, protein and strength training — the 3 markers that most impact long-term health after 35."}
+            </div>
+          </Card>
+        )}
 
         {/* Time filter */}
         <div style={{ fontSize: 12, fontWeight: 800, color: "#6B7A8D", letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 8 }}>
