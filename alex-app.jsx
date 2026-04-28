@@ -67,6 +67,25 @@ function calcLongevityMarkers(history) {
   return { sleepAvg, proteinHits, strengthCount, stressDays, score, sample: last7.length }
 }
 
+function getMilestoneInsight(history, milestone) {
+  const h = history || []
+  if (h.length < milestone) return []
+  const first = h.slice(0, 30)
+  const last  = h.slice(-30)
+  const avg = (arr, key) => arr.reduce((s, x) => s + (parseFloat(x[key]) || 0), 0) / (arr.length || 1)
+  const metrics = [
+    { key: "energy", label_uk: "Енергія", label_en: "Energy" },
+    { key: "sleep",  label_uk: "Сон",     label_en: "Sleep"  },
+    { key: "mood",   label_uk: "Настрій", label_en: "Mood"   },
+    { key: "water",  label_uk: "Вода",    label_en: "Water"  },
+  ]
+  return metrics
+    .map(m => ({ ...m, delta: avg(last, m.key) - avg(first, m.key) }))
+    .filter(m => m.delta > 0)
+    .sort((a, b) => b.delta - a.delta)
+    .slice(0, 3)
+}
+
 function calcCycleDay(profile) {
   if (profile.lastPeriodDate) {
     const start = new Date(profile.lastPeriodDate + "T12:00:00Z")
@@ -1211,6 +1230,17 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
   const tasks        = getTimeTasks(timeFilter, phaseKey, uk)
   const protocol     = getDefaultProtocol(uk)
   const longevity    = calcLongevityMarkers(history)
+  const milestoneStreak = (streak === 30 || streak === 60 || streak === 90) ? streak : null
+  const [milestoneSeen, setMilestoneSeen] = useState(() =>
+    milestoneStreak ? lsGet("vive_milestone_" + milestoneStreak + "_seen", false) : true
+  )
+  const milestoneInsights = milestoneStreak ? getMilestoneInsight(history, milestoneStreak) : []
+
+  function dismissMilestone() {
+    if (!milestoneStreak) return
+    lsSet("vive_milestone_" + milestoneStreak + "_seen", true)
+    setMilestoneSeen(true)
+  }
 
   const [done, setDone] = useState(() => {
     const saved = lsGet("vive_tasks_done", { date: "", done: [] })
@@ -1346,6 +1376,33 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
                 ? "Сон, білок і силові — три маркери, які найсильніше впливають на довгострокове здоров'я після 35."
                 : "Sleep, protein and strength training — the 3 markers that most impact long-term health after 35."}
             </div>
+          </Card>
+        )}
+
+        {/* Milestone banner */}
+        {milestoneStreak && !milestoneSeen && (
+          <Card style={{ marginBottom: 20, background: "linear-gradient(135deg, rgba(245,158,63,0.12), rgba(78,203,168,0.10))", border: "1px solid rgba(245,158,63,0.3)" }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: "#1A2433", marginBottom: 8 }}>
+              {uk ? `🌟 ${milestoneStreak} днів! Твоє тіло відповідає:` : `🌟 ${milestoneStreak} days! Your body responds:`}
+            </div>
+            {milestoneInsights.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                {milestoneInsights.map(m => (
+                  <div key={m.key} style={{ fontSize: 13, color: "#1A2433", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: "#4ECBA8", fontWeight: 800 }}>↑</span>
+                    <span style={{ fontWeight: 700 }}>{uk ? m.label_uk : m.label_en}</span>
+                    <span style={{ color: "#6B7A8D" }}>+{m.delta.toFixed(1)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: "#6B7A8D", marginBottom: 14, lineHeight: 1.5 }}>
+                {uk ? "Стабільний ритм — це вже сильна перемога 💙" : "A steady rhythm is its own win 💙"}
+              </div>
+            )}
+            <button onClick={dismissMilestone} style={{ ...S.btnPrimary, padding: "10px 18px", fontSize: 14 }}>
+              {uk ? "Got it" : "Got it"}
+            </button>
           </Card>
         )}
 
