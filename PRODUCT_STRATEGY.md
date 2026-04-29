@@ -4,6 +4,14 @@
 
 ---
 
+> ⚡ **UPDATE 28.04.2026 — Femtech adaptation активна.**
+> Актуальне позиціонування: **AI Longevity Coach for women 35+**.
+> Перименопауза як стан (через валідовану шкалу Peri-SS / MRS) + cycle-фазові рекомендації по 4 категоріях.
+> Деталі — у **ЧАСТИНІ 5** в кінці документа.
+> Частини 1–4 нижче — оригінальний research foundation, **не змінено** (зберігається для майбутнього аналізу і як база MVP).
+
+---
+
 # ЧАСТИНА 1: ПРОБЛЕМА — що болить у жінок 25-50
 
 ## Головний інсайт
@@ -558,6 +566,240 @@ Body Audit → Root Cause Report → Protocol → Daily Check-in → Stripe
 | Конкуренція від Flo/Clue | Низький | Вони для 20-річних і fertility |
 | ChatGPT/Claude у health | Низький | Ми — система і дисципліна, вони — відповіді на питання |
 | GDPR (health data) | Середній | Explicit consent, EU-compliant hosting від початку |
+
+---
+
+# ЧАСТИНА 5: FEMTECH ADAPTATION (UPDATE — квітень 2026)
+
+*Цей розділ додано 28.04.2026 після глибокого аналізу Femtech ринку 2026. Частини 1–4 вище — оригінальний research foundation (не змінено).*
+
+---
+
+## 5.1 Чому Femtech і чому зараз
+
+**Ринок (консенсус 5+ джерел, дослідження квітень 2026):**
+
+| Метрика | 2025 | 2026 | 2030–2035 | CAGR |
+|---|---|---|---|---|
+| Загальний Femtech | $51–63B | $59–66B | $140–267B (до 2035) | **15.5–18.4%** |
+| Менструальні апи | – | 43.3% частки | – | 20.3% |
+| Software-сегмент Femtech | – | – | $12.87B (2030) | 16.4% |
+| Жіноче здоров'я загалом | – | – | $1T opportunity (McKinsey) | – |
+
+Ринок росте **у 3 рази швидше** за середній SaaS (CAGR 16%+ vs 5–7%). Software випереджає devices.
+
+**Найгарячіші сегменти 2026 (за пріоритетом):**
+1. **Перименопауза/менопауза** — >1 млрд жінок до 2030
+2. **Longevity для жінок** — нова конвергенція longevity + reproductive science (Midi AgeWell май 2025, Peri CES winner 2026) — **наша обрана зона**
+3. **AI-coaches > tracker** — "evolving from digital diaries to smart coaches"
+4. **Unified data platforms** — Apple Health/Oura інтеграція = standard 2026
+5. **Mental health + holistic** — core component, не add-on
+6. **Maternal mental health** — gap, поза нашим scope
+
+**Funding:**
+- Березень 2026: $72M в Femtech-стартапи за один місяць
+- Midi Health = юнікорн ($150M+, $50M Series C)
+- Менопауза + AI = головні теми funding 2026
+- Тільки 1–5% VC до жінок-засновниць → твій актив (operator-засновниця як рідкість)
+
+---
+
+## 5.2 Конкурентна карта (оновлено 2026)
+
+| Компанія | Цільова | Гроші/Розмір | Slot |
+|---|---|---|---|
+| **Flo Health** | 18–35 | 380M downloads | Tracker, masses |
+| **Clue** | 18–35 EU | – | Privacy-first tracker |
+| **Balance** | 45+ UK | 1M users, NHS | UK-clinical menopause |
+| **Caria** | 40+ | RCT 2025: -17.1% hot flash | Symptom mgmt |
+| **Stella** | 40+ | – | Coaching + workouts |
+| **Evernow** | 40+ | Paltrow/Moore backed | Clinical (HRT) |
+| **Midi Health** | 40+ US | $150M+, юнікорн 2026 | Clinical + AgeWell longevity |
+| **Peri** | 40+ | CES 2026 winner | Hardware |
+| **Midday** | 40+ | Mayo Clinic guidance | AI + clinical |
+| **Stripes** | 50+ | – | Physical products |
+| **Goop** | 40+ wealthy | Stagnant з 2021 | Lifestyle media |
+| **Lemme** | 25–45 | Class action 2025 | Symptom→pill |
+
+**Whitespace для Alex:**
+
+| Тренд 2026 | Alex сьогодні | Розрив |
+|---|---|---|
+| AI-coach > tracker | ✅ "Не трекер — тренер" | Підсилити messaging |
+| Root-cause / unified | ✅ 5 причин в `CAUSE_DATA` | Унікально |
+| Перименопауза 35–50 | ⚠️ Цикл є, перименопауза не явно | Додати з валідованою шкалою |
+| **Longevity для жінок** | ❌ Не позиціонується | **ГОЛОВНИЙ whitespace** |
+| Holistic | ✅ Mood/sleep/energy + cycle | OK |
+| Beauty + hormones | ✅ Колаген-естроген зв'язок | Унікально |
+| Cycle-phase coaching | ⚠️ phaseColors є, рекомендації базові | Розширити по 4 категоріях |
+| Clinical/HRT | ❌ Wellness-рамка | НЕ йти |
+
+**Захист vs Midi AgeWell (головна загроза):**
+- Глобальний (vs US-страховка)
+- $19/міс vs $150–300/міс
+- AI-driven (без лікаря в loop)
+- Beauty-pillar якого в Midi нема
+- Operator-засновниця (унікальна позиція)
+
+---
+
+## 5.3 НОВЕ позиціонування (замінює рядки 230–248)
+
+**Старе позиціонування (Частина 3, line 232–248):**
+> *"Персональний щоденний AI-гід для жінок 25-50 який перекладає розуміння свого тіла в конкретні щоденні дії..."*
+
+**Нове позиціонування (актуальне, обрано 28.04.2026):**
+
+> **"AI longevity coach for women 35+. 5 symptoms, 1 root cause. Skin, hair, hormones, energy — connected. No doctor, no $300/month."**
+>
+> **UA:** *"Твій AI longevity-тренер. 5 симптомів — 1 причина. Шкіра, волосся, гормони, енергія — як одна система."*
+
+**Що змінилось:**
+- Цільова: 25–50 → **35+** (фокус, не звуження — нижча межа залишається через cycle-tracking)
+- Frame: "wellness app" → **"longevity coach"** (Femtech-вокабуляр 2026)
+- Хук: збережено "5 symptoms, 1 root cause" — це твій унікальний кут
+- Pricing: $19/міс і $29 one-time — без змін
+
+**Що НЕ змінилось:**
+- Продукт по суті той самий
+- 9-екранна архітектура (Welcome → Audit → Paywall → Report → Dashboard → Chat → Check-in → Progress → Profile)
+- Beauty + hormones pillar (підсилюємо в W3)
+- Wellness-рамка (НЕ йдемо в HRT/clinical)
+
+---
+
+## 5.4 Перименопауза як стан — валідована шкала
+
+**Доказова основа (PubMed-validated):**
+- **Peri-SS (Perimenopause Symptom Scale, 2025)** — medRxiv, валідовано спеціально для digital self-assessment 35–59 років → першочерговий вибір
+- **MRS (Menopause Rating Scale)** — public domain, 11 симптомів, 10+ мов → fallback
+- **STRAW+10** — золотий стандарт staging, але потребує lab markers (FSH/AMH) → НЕ використовуємо для self-assessment
+
+**Імплементація — 2-крокове opt-in (м'яка, не лякаюча):**
+
+Step A: "Have you noticed shifts vs 5 years ago?" / "Чи помічаєш зміни порівняно з тим що було 5 років тому?"
+Step B (якщо Yes): 8 питань MRS-based по 0–3 шкалі.
+
+Trigger: `score >= 8 з 24 + age 35–55` → root cause `hormone_shift` в `CAUSE_DATA`.
+
+**М'яка подача в звіті — секція "Hormone shifts you're noticing":**
+- Заголовок БЕЗ слова "menopause" як перший фрейм
+- Освіта: "Не діагноз. Не пов'язано з тим, чи ти народжувала."
+- Перспектива: "Більшість жінок чекає 2.6 років, щоб лікар це назвав. Ти бачиш це раніше."
+- 3 конкретні дії з протоколу + кнопка "Запитай Алекс"
+
+**Дисклеймер обов'язково:**
+> "Alex — wellness-coach, не медицина. Якщо симптоми сильні — поговори з лікарем. Шкала на основі MRS / Peri-SS, інтерпретуємо як wellness-сигнал, не діагноз."
+
+---
+
+## 5.5 Cycle-фазові рекомендації — нова pillar
+
+Розширюємо `generateDailyTasks` і `generateBeautyRoutine` на матрицю **4 фази × 4 категорії** (Nutrition / Movement / Rest / Beauty). Повний об'єкт `CYCLE_PHASE_PROTOCOLS` — у `TECH_PLAN.md` секція W2-4.
+
+**Source basis:** Cleveland Clinic 2026, Geisinger 2026, KHNI, narrative review PMC10251302.
+
+**Caveat:** Cycle syncing has limited RCT-level evidence (Cleveland Clinic 2026). Frame як "many women find this helpful, evidence is emerging" — НЕ як медичну рекомендацію.
+
+---
+
+## 5.6 Чат з Alex — зберігаємо
+
+Screen 6 (`chat`, line 1247) **не міняємо у цьому циклі**. Жінка має простір спитати що цікавить.
+- QA_PAIRS залишаємо
+- Claude API в roadmap (TECH_PLAN.md ↳ "Високий пріоритет")
+- Додаємо preset-suggestions: "Що таке перименопауза?", "Кортизол і шкіра", "Білок без тренувань"
+
+---
+
+## 5.7 Roadmap імплементації (3 тижні)
+
+**Week 1 — Позиціонування + Perimenopause:** ✅ ЗРОБЛЕНО (28.04.2026)
+- Welcome longevity-vocabulary
+- Body Audit perimenopause-блок (Peri-SS / 8 питань)
+- Report "Hormone shifts" секція
+- SEO meta
+
+**Week 2 — Longevity Markers + Cycle protocols:** ✅ ЧАСТКОВО ЗРОБЛЕНО
+- Dashboard Longevity Markers (sleep / protein / strength / stress) ✅
+- Check-in нові yes/no chips (protein hit + strength done) ✅
+- 30-day milestone notification ⏳ (логіка є, mechanism — у P0)
+- CYCLE_PHASE_PROTOCOLS об'єкт + integration ✅
+
+**Week 3 — Beauty + hormones map:** ⏳ У P0 (29.04.2026)
+- "Your beauty hormones map" секція в Report
+- "Skip these products" список
+- Phase-aware beauty routine з рахуванням `hormoneShiftDetected`
+
+**Що НЕ робимо у цьому циклі:**
+- HRT / prescription
+- Wearable integration (V2/V3)
+- Зміна pricing
+- Personal Brand файли (окрема сесія)
+
+---
+
+## 5.7-A P0 ROADMAP (затверджено 29.04.2026)
+
+Після завершення W1+W2 виявився розрив: продукт виглядає як "wellness app з cycle-фазами", але стратегія вимагає **biohacker / longevity DNA**. P0 закриває весь цикл одразу.
+
+**P0 (тижні 1-3) — Biohacker Stack + W3 cleanup:**
+1. **Biohacker Stack Builder** — sauna/strength/sleep/cold/red light/creatine/fasting/HRT-prep з evidence + female caveats. Замінює LED mask (Частина 1 р. 152-156: sauna ⭐⭐⭐⭐⭐ > LED ⭐⭐⭐⭐).
+2. **Default Protocol** → sauna 3x + strength 2x + quarterly biomarkers (видаляємо cosmetologist + LED mask).
+3. **Time tabs** → Morning / Movement / Evening (longevity-логіка дня, не хвилин).
+4. **Beauty Hormones Map** + **Skip Products** (W3 №1, №2 — вище).
+5. **30-day milestone notification** (W2 cleanup).
+6. **Cleanup:** "low libido" → "morning energy/recovery"; water → recovery score; "Beauty routine" → "Skin Longevity Protocol".
+
+**P1 (тижні 3-6):** Claude API чат + Skin Longevity tooltips.
+**P2 (тижні 6-10):** Lab Results Upload (Claude Vision) + Quarterly Re-Audit.
+**P3 (V2+):** Wearable / Photo tracker / Strength reps log / Community.
+
+**White space (НІХТО не зайняв):** "Female-specific Blueprint" — biohacking стек що поважає цикл, перименопаузу і longevity маркери для жінок 35+. Це позиція Alex після P0.
+
+Деталі: `~/.claude/plans/users-janefinko-desktop-claud-newyou-ai-glimmering-bumblebee.md`
+
+---
+
+## 5.8 Success metrics
+
+**30 днів після релізу:**
+- Body Audit completion з perimenopause-блоком ≥ 70%
+- CTR на Body Audit з нового landing ≥ +20% vs baseline
+- Paywall conversion ≥ 15%
+- Perimenopause-trigger у 30–50% юзерок 35+
+- Hormone shifts секція не викликає drop-off
+
+**90 днів:**
+- 50+ платних юзерів
+- Day 30 retention > 40%
+- NPS > 50
+- Cycle-фазові рекомендації — positive feedback у 5+ customer interviews
+
+---
+
+## 5.9 Femtech sources (квітень 2026)
+
+**Ринок:**
+- World Health Expo: https://www.worldhealthexpo.com/insights/medical-technology/what-s-trending-in-femtech-in-2026-
+- Future Fem Health 19 experts: https://www.futurefemhealth.com/p/19-experts-predict-whats-in-store
+- FemTech World menopause apps 2026: https://www.femtechworld.co.uk/insight/best-menopause-apps-and-products-for-2026/
+- MedCity News Midi unicorn: https://medcitynews.com/2026/02/digital-health-unicorn-women/
+- Fortune Midi longevity: https://fortune.com/2025/05/27/midi-health-longevity-women/
+- Longevity Investors Femtech: https://www.longevityinvestors.ch/post/the-growing-femtech-longevity-market-opportunities-in-menopause-and-reproductive-health
+- Precedence Research: https://www.precedenceresearch.com/femtech-market
+
+**Validated шкали perimenopause:**
+- STRAW+10 PMC: https://pmc.ncbi.nlm.nih.gov/articles/PMC3340903/
+- MRS methodological review PMC: https://pmc.ncbi.nlm.nih.gov/articles/PMC516787/
+- Peri-SS digital self-assessment medRxiv 2025: https://www.medrxiv.org/content/10.1101/2025.07.16.25331654v3.full
+- Greene Climacteric Scale: https://www.mymenopausecentre.com/gp-resources/what-is-the-greene-climacteric-scale/
+
+**Cycle-phase nutrition/exercise:**
+- Cleveland Clinic: https://health.clevelandclinic.org/nutrition-and-exercise-throughout-your-menstrual-cycle
+- Geisinger 2026: https://www.geisinger.org/health-and-wellness/wellness-articles/2026/04/02/17/52/menstrual-cycle-syncing
+- KHNI: https://khni.kerry.com/news/womens-health/nutrition-and-physical-activity-recommendations-across-the-menstrual-cycle/
+- Narrative review PMC: https://pmc.ncbi.nlm.nih.gov/articles/PMC10251302/
 
 ---
 

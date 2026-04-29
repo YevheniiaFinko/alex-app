@@ -77,13 +77,64 @@ function getMilestoneInsight(history, milestone) {
     { key: "energy", label_uk: "Енергія", label_en: "Energy" },
     { key: "sleep",  label_uk: "Сон",     label_en: "Sleep"  },
     { key: "mood",   label_uk: "Настрій", label_en: "Mood"   },
-    { key: "water",  label_uk: "Вода",    label_en: "Water"  },
+    { key: "recovery", label_uk: "Відновлення", label_en: "Recovery" },
   ]
   return metrics
     .map(m => ({ ...m, delta: avg(last, m.key) - avg(first, m.key) }))
     .filter(m => m.delta > 0)
     .sort((a, b) => b.delta - a.delta)
     .slice(0, 3)
+}
+
+// ─── NOTIFICATIONS (P0.4) ─────────────────────────────────────────────────────
+// Push: local notification via service worker (no VAPID server needed for the
+// streak=30/60/90 trigger — detection happens client-side on dashboard mount).
+// Email: POST to /api/notify which calls Resend.
+
+async function requestPushPermission() {
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) return "unsupported"
+  try {
+    const perm = await Notification.requestPermission()
+    return perm // "granted" | "denied" | "default"
+  } catch { return "denied" }
+}
+
+async function showLocalMilestoneNotification({ milestone, lang, insights }) {
+  if (!("serviceWorker" in navigator)) return false
+  if (!("Notification" in window) || Notification.permission !== "granted") return false
+  try {
+    const reg = await navigator.serviceWorker.ready
+    const uk = lang === "uk"
+    const title = uk ? `🌟 ${milestone} днів з Alex` : `🌟 ${milestone} days with Alex`
+    const top = (insights || []).slice(0, 3)
+      .map(i => (uk ? i.label_uk : i.label_en) + " +" + (i.delta || 0).toFixed(1))
+      .join(" · ")
+    const body = top
+      || (uk ? "Стабільний ритм — це вже сильна перемога 💙" : "A steady rhythm is its own win 💙")
+    await reg.showNotification(title, {
+      body,
+      tag: "alex-milestone-" + milestone,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url: "/" },
+    })
+    return true
+  } catch { return false }
+}
+
+async function sendMilestoneEmail({ email, name, milestone, lang, insights }) {
+  if (!email) return { ok: false, reason: "no-email" }
+  try {
+    const r = await fetch("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, name, milestone, lang, insights }),
+    })
+    const data = await r.json().catch(() => ({}))
+    return { ok: r.ok, status: r.status, ...data }
+  } catch (e) {
+    return { ok: false, reason: "network" }
+  }
 }
 
 function calcCycleDay(profile) {
@@ -325,7 +376,7 @@ function getRootCauses(profile) {
   if (skin.includes("dry"))      s.estrogen += 1
   if (skin.includes("wrinkles")) s.estrogen += 1
   if (hair.includes("thinning")) s.estrogen += 2
-  if (body.includes("libido"))   s.estrogen += 1
+  if (body.includes("morningEnergy")) s.cortisol += 1
   if (body.includes("joints"))   s.estrogen += 1
   if (profile.sleepQuality === "poor") s.estrogen += 1
 
@@ -425,9 +476,9 @@ function generateDailyTasks(profile, phaseKey, uk) {
 
 function getDefaultProtocol(uk) {
   return [
-    { id: "cosm", icon: "💆", name: uk ? "Косметолог"  : "Cosmetologist", note: uk ? "Раз на місяць"      : "Once a month" },
-    { id: "labs", icon: "🩸", name: uk ? "Аналізи"     : "Lab tests",     note: uk ? "Раз на 6 місяців"  : "Every 6 months" },
-    { id: "led",  icon: "💡", name: uk ? "LED-маска"   : "LED mask",      note: uk ? "3–5x на тиждень"   : "3–5x per week" },
+    { id: "sauna",      icon: "🔥", name: uk ? "Сауна"          : "Sauna",                note: uk ? "3x на тиждень, 15–20 хв"     : "3x per week, 15–20 min" },
+    { id: "strength",   icon: "🏋️", name: uk ? "Силові"          : "Strength training",    note: uk ? "2x на тиждень, базові рухи"  : "2x per week, compound moves" },
+    { id: "biomarkers", icon: "🩸", name: uk ? "Біомаркери"      : "Biomarker check-in",   note: uk ? "Раз на квартал"              : "Quarterly" },
   ]
 }
 
@@ -454,18 +505,443 @@ const PHASE_RECS = {
   },
 }
 
-function getTimeTasks(timeFilter, phaseKey, uk) {
-  if (timeFilter === "10") return [
-    { id: "breath",   icon: "🫁", title: uk ? "4-7-8 дихання"    : "4-7-8 breathing",   detail: uk ? "3 хв — знижує кортизол"        : "3 min — lowers cortisol" },
-    { id: "cold",     icon: "🚿", title: uk ? "Контрастний душ"   : "Cold/hot shower",   detail: uk ? "30с холодної води наприкінці"  : "End with 30s cold water" },
-    { id: "sunlight", icon: "☀️", title: uk ? "Сонячне світло"    : "Morning sunlight",  detail: uk ? "5–10 хв вранці на вулиці"      : "5–10 min morning outdoor light" },
+function getTabTasks(tab, phaseKey, uk) {
+  if (tab === "morning") return [
+    { id: "sunlight", icon: "☀️", title: uk ? "Сонячне світло"    : "Morning sunlight", detail: uk ? "5–10 хв на вулиці після пробудження" : "5–10 min outside after waking" },
+    { id: "breath",   icon: "🫁", title: uk ? "4-7-8 дихання"    : "4-7-8 breathing",  detail: uk ? "3 хв — знижує ранковий кортизол"      : "3 min — lowers morning cortisol" },
+    { id: "protein",  icon: "🍳", title: uk ? "Білок на сніданок" : "Protein breakfast", detail: uk ? "25г+ білку — стабілізує енергію та цукор" : "25g+ protein — stabilises energy & glucose" },
+    { id: "skin_am",  icon: "🌅", title: uk ? "Ранкова рутина шкіри" : "AM skin routine", detail: uk ? "Очищення → вітамін C → SPF"          : "Cleanse → vitamin C → SPF" },
   ]
-  if (timeFilter === "60") return [
-    { id: "workout",  icon: "🏋️", title: uk ? "Тренування"        : "Workout",           detail: { menstrual: uk?"Йога 45 хв":"Yoga 45 min", follicular: uk?"Кардіо 45 хв":"Cardio 45 min", ovulation: uk?"HIIT 45 хв":"HIIT 45 min", luteal: uk?"Пілатес 45 хв":"Pilates 45 min" }[phaseKey] },
-    { id: "mealprep", icon: "🥗", title: uk ? "Підготовка їжі"    : "Meal prep",         detail: uk ? "Приготуй білок + овочі на день" : "Prep protein + vegetables" },
-    { id: "journal",  icon: "📔", title: uk ? "Рефлексія"         : "Journaling",        detail: uk ? "3 речі + медитація 15 хв"       : "3 things + 15 min meditation" },
+  if (tab === "movement") {
+    const workout = {
+      menstrual:  { uk: "Ніжна йога або ходьба 20 хв", en: "Gentle yoga or walking 20 min" },
+      follicular: { uk: "Кардіо або танці 30 хв",      en: "Cardio or dancing 30 min" },
+      ovulation:  { uk: "HIIT або силові 30 хв",       en: "HIIT or strength 30 min" },
+      luteal:     { uk: "Пілатес або силові 25 хв",    en: "Pilates or strength 25 min" },
+    }[phaseKey]
+    return [
+      { id: "workout",  icon: "🏋️", title: uk ? "Тренування за фазою" : "Phase-aligned workout", detail: uk ? workout.uk : workout.en },
+      { id: "steps",    icon: "🚶", title: uk ? "8000 кроків"         : "8000 steps",            detail: uk ? "Ціль на день — рухомість + лімфа" : "Daily goal — mobility + lymph flow" },
+      { id: "mobility", icon: "🧘", title: uk ? "Мобільність"         : "Mobility",              detail: uk ? "5 хв розтяжки/мобілізації стегон" : "5 min stretching / hip mobility" },
+    ]
+  }
+  if (tab === "evening") return [
+    { id: "skin_pm",  icon: "🌙", title: uk ? "Вечірня рутина шкіри" : "PM skin routine", detail: uk ? "Подвійне очищення → пептиди / ретинол" : "Double cleanse → peptides / retinol" },
+    { id: "magnesium", icon: "💊", title: uk ? "Магній перед сном"   : "Magnesium before bed", detail: uk ? "300мг гліцинат — сон + знижує кортизол" : "300mg glycinate — sleep + lowers cortisol" },
+    { id: "noscreen", icon: "📵", title: uk ? "Без екранів за 1 год" : "No screens 1h before", detail: uk ? "Захищає мелатонін і фазу засинання"   : "Protects melatonin and sleep onset" },
+    { id: "cool",     icon: "❄️", title: uk ? "Прохолодна спальня"   : "Cool bedroom",         detail: uk ? "18°C — глибший сон, менше припливів"  : "18°C — deeper sleep, fewer flushes" },
   ]
   return generateDailyTasks({}, phaseKey, uk)
+}
+
+// ─── BIOHACKER STACK (female-specific longevity tools, evidence-rated) ────────
+// evidence: 1–5 stars based on female-specific RCT / longitudinal data.
+// Frame: wellness exploration with female caveats. Not medical advice.
+const BIOHACKER_STACK = {
+  sauna: {
+    icon: "🔥",
+    title:           { en: "Sauna",                                      uk: "Сауна" },
+    evidence: 5,
+    cost:            { en: "$ home / $$$ infrared",                      uk: "$ дома / $$$ інфрачервона" },
+    why:             { en: "30% lower all-cause mortality at 4x/week (Finnish KIHD study). Drops cortisol, mimics moderate exercise for cardio.",
+                       uk: "На 30% нижча загальна смертність при 4x/тиждень (фінське KIHD дослідження). Знижує кортизол, імітує помірне кардіо." },
+    femaleCaveat:    { en: "Skip during heavy menstrual bleeding (iron loss). Stay hydrated with electrolytes — women dehydrate ~15% faster.",
+                       uk: "Пропусти при сильній менструації (втрата заліза). Гідруйся з електролітами — жінки дегідратуються на ~15% швидше." },
+    howToStart:      { en: "Wk1: 10 min @ 70°C, 2x. Wk2-3: 15 min, 3x. Wk4+: 20 min, 3-4x. Always end cool, not hot.",
+                       uk: "Т1: 10 хв при 70°C, 2x. Т2-3: 15 хв, 3x. Т4+: 20 хв, 3-4x. Закінчуй прохолодою, не жаром." },
+  },
+  strength: {
+    icon: "🏋️",
+    title:           { en: "Strength training",                          uk: "Силові тренування" },
+    evidence: 5,
+    cost:            { en: "$0 bodyweight / $$ gym",                     uk: "$0 з власною вагою / $$ зал" },
+    why:             { en: "Single most effective intervention for women 35+. Bone density peaks at 30, drops 1%/yr. Strength reverses sarcopenia and stabilises insulin.",
+                       uk: "Найефективніша інтервенція для жінок 35+. Щільність кісток падає 1%/рік після 30. Силові реверсують саркопенію і стабілізують інсулін." },
+    femaleCaveat:    { en: "Heavy lifts in follicular/ovulation, deload in luteal. Skip strength on heavy bleed days — joints are laxer.",
+                       uk: "Важкі ваги — у фолікулярну/овуляцію, разгрузка — у лютеїн. Пропусти у дні сильного кровотечі — суглоби розхитані." },
+    howToStart:      { en: "2x/week, 4 compound moves (squat, hinge, push, pull), 3x6-8 reps. Add weight when last rep is easy.",
+                       uk: "2x/тиждень, 4 базових рухи (присід, тяга, жим, підтягування), 3x6-8 повторень. Додавай вагу, коли останнє повторення легке." },
+  },
+  sleep: {
+    icon: "😴",
+    title:           { en: "Sleep architecture",                         uk: "Архітектура сну" },
+    evidence: 5,
+    cost:            { en: "$0",                                         uk: "$0" },
+    why:             { en: "Single biggest longevity lever. Deep sleep clears amyloid; REM consolidates memory. Estrogen drop disrupts both — fix is structural, not just hours.",
+                       uk: "Найбільший важіль довголіття. Глибокий сон вичищає амілоїд; REM закріплює пам'ять. Падіння естрогену збиває обидва — фікс структурний, не лише в годинах." },
+    femaleCaveat:    { en: "Luteal needs 30-60 min more sleep. Hot flushes wake you in late luteal — cool room (18°C), wicking sleepwear.",
+                       uk: "У лютеїн треба на 30-60 хв більше сну. Припливи будять у кінці лютеїну — прохолодна спальня (18°C), вологовідводна піжама." },
+    howToStart:      { en: "Anchor wake time 7 days/week. Sunlight in eyes within 30 min of waking. Last meal 3h before bed. No screens 1h before.",
+                       uk: "Якір — однаковий час пробудження 7 днів. Сонце в очі за 30 хв після пробудження. Остання їжа за 3г до сну. Без екранів за 1г." },
+  },
+  creatine: {
+    icon: "💪",
+    title:           { en: "Creatine monohydrate",                       uk: "Креатин моногідрат" },
+    evidence: 4,
+    cost:            { en: "$15/month",                                  uk: "~$15/міс" },
+    why:             { en: "Most-studied supplement on the planet. For women 35+: 5g/day adds muscle mass, supports brain (memory, fog), and bone density. Not just for gym bros.",
+                       uk: "Найдосліджена добавка планети. Для жінок 35+: 5г/день нарощує м'язи, підтримує мозок (пам'ять, туман) і щільність кісток. Не лише для качків." },
+    femaleCaveat:    { en: "Women under-respond at 3g — 5g is the dose. Water retention is intracellular (good), not bloating. Take with carbs for uptake.",
+                       uk: "Жінки недореагують на 3г — доза 5г. Затримка води внутрішньоклітинна (добре), не набряк. Приймай з вуглеводами для засвоєння." },
+    howToStart:      { en: "5g/day, any time, with food. No loading phase needed. Skip 'creatine HCl' — monohydrate is the only proven form.",
+                       uk: "5г/день, будь-коли, з їжею. Завантаження не потрібне. Пропусти 'креатин HCl' — моногідрат єдина доведена форма." },
+  },
+  redLight: {
+    icon: "🔴",
+    title:           { en: "Red light therapy",                          uk: "Червоне світло (RLT)" },
+    evidence: 3,
+    cost:            { en: "$$ panel ($150-400)",                        uk: "$$ панель ($150-400)" },
+    why:             { en: "Stimulates collagen (estrogen-dependent — drops 1.5%/yr after 35), improves mitochondrial energy, supports thyroid. 660nm + 850nm wavelengths.",
+                       uk: "Стимулює колаген (естроген-залежний — падає 1.5%/рік після 35), покращує мітохондріальну енергію, підтримує щитовидку. Хвилі 660нм + 850нм." },
+    femaleCaveat:    { en: "Avoid direct light on thyroid if Hashimoto's. Skin response is hormone-dependent — track 8 weeks before judging.",
+                       uk: "Уникай прямого світла на щитовидку при Хашимото. Реакція шкіри гормон-залежна — оцінюй через 8 тижнів." },
+    howToStart:      { en: "10-20 min, 3-5x/week, 30 cm from skin. Bare skin only — clothes block wavelengths. Morning is optimal.",
+                       uk: "10-20 хв, 3-5x/тиждень, 30 см від шкіри. Лише гола шкіра — одяг блокує хвилі. Зранку оптимально." },
+  },
+  coldPlunge: {
+    icon: "🧊",
+    title:           { en: "Cold exposure",                              uk: "Холодова експозиція" },
+    evidence: 3,
+    cost:            { en: "$0 cold shower / $$$ tub",                   uk: "$0 холодний душ / $$$ ванна" },
+    why:             { en: "Boosts norepinephrine 200-300%, brown fat activation, dopamine baseline. Mood + focus benefits stronger than physical.",
+                       uk: "Підвищує норадреналін на 200-300%, активує бурий жир, базовий дофамін. Користь для настрою/фокусу сильніша за фізичну." },
+    femaleCaveat:    { en: "CAUTION in luteal phase — already-elevated cortisol can spike further. Skip if you have Raynaud's. Never longer than 3 min for women.",
+                       uk: "ОБЕРЕЖНО в лютеальній фазі — і так високий кортизол може стрибнути ще. Пропусти при Рейно. Ніколи довше 3 хв для жінок." },
+    howToStart:      { en: "Wk1-2: end shower with 30s @ 15°C. Wk3+: 1-2 min plunge @ 12-15°C, 2-3x/week, only follicular/ovulation.",
+                       uk: "Т1-2: закінчуй душ 30с при 15°C. Т3+: 1-2 хв занурення при 12-15°C, 2-3x/тиждень, лише фолікулярна/овуляція." },
+  },
+  fasting: {
+    icon: "⏰",
+    title:           { en: "Time-restricted eating",                     uk: "Обмежене у часі харчування" },
+    evidence: 2,
+    cost:            { en: "$0",                                         uk: "$0" },
+    why:             { en: "Modest insulin/autophagy benefits, but female-specific data is thin. Most longevity wins come from quality of food, not timing window.",
+                       uk: "Помірна користь для інсуліну/аутофагії, але жіночих даних мало. Більшість виграшу довголіття — від якості їжі, не вікна часу." },
+    femaleCaveat:    { en: "Cap window at 12-14h — longer disrupts thyroid + cycle. NEVER skip breakfast in luteal phase. Stop if cycle goes irregular.",
+                       uk: "Обмежуй вікно 12-14г — довше збиває щитовидку + цикл. НІКОЛИ не пропускай сніданок у лютеїн. Стоп, якщо цикл збився." },
+    howToStart:      { en: "12h overnight (e.g. 8pm-8am). Add 1h every 2 weeks if it feels good. Stop at 14h. Black coffee/tea OK in fasting window.",
+                       uk: "12г уночі (напр. 20:00-08:00). Додавай по 1г кожні 2 тижні якщо комфортно. Стоп на 14г. Чорна кава/чай у вікні голоду — ок." },
+  },
+  hrtPrep: {
+    icon: "📋",
+    title:           { en: "HRT-conversation prep",                      uk: "Підготовка до розмови про ГЗТ" },
+    evidence: 4,
+    cost:            { en: "$0 — 1 doctor visit",                        uk: "$0 — 1 візит до лікаря" },
+    why:             { en: "Modern body-identical HRT (estradiol patch + micronised progesterone) is safer than 2002 WHI study suggested. Most women 40+ benefit. You bring data, doctor decides.",
+                       uk: "Сучасна біоідентична ГЗТ (пластир естрадіолу + мікронізований прогестерон) безпечніша, ніж казало WHI 2002. Більшості жінок 40+ корисно. Ти приносиш дані, лікар вирішує." },
+    femaleCaveat:    { en: "Not a DIY tool. This is preparation: log symptoms 90 days, request labs (FSH, estradiol, AMH), ask about transdermal route specifically.",
+                       uk: "Не для самопрактики. Це підготовка: лог симптомів 90 днів, запит аналізів (ФСГ, естрадіол, АМГ), питай саме про трансдермальний шлях." },
+    howToStart:      { en: "1) 90-day symptom log via Alex check-in. 2) Request: FSH day 3, estradiol, AMH, free testosterone. 3) Ask about estradiol patch + oral micronised progesterone (not synthetic progestins).",
+                       uk: "1) 90-денний лог симптомів через check-in Alex. 2) Запит: ФСГ 3 день, естрадіол, АМГ, вільний тестостерон. 3) Питай про пластир естрадіолу + оральний мікронізований прогестерон (не синтетичні прогестини)." },
+  },
+}
+
+// Picks 3-4 most relevant biohacker tools for a profile.
+// Logic: weighted scoring on age + symptoms + hormoneShift + cycle phase.
+function generateBiohackerRecs(profile) {
+  const skin = profile.skinSymptoms || []
+  const hair = profile.hairSymptoms || []
+  const body = profile.bodySymptoms || []
+  const age  = profile.birthYear ? calcAge(profile.birthYear) : 35
+  const phase = getPhase(calcCycleDay(profile), parseInt(profile.cycleLength) || 28)
+  const hormoneShift = isHormoneShiftDetected(profile)
+  const stress = parseInt(profile.stressLevel) || 5
+  const lowProtein = profile.proteinIntake === "low" || profile.proteinIntake === "moderate"
+
+  const score = { sauna: 2, strength: 3, sleep: 2, creatine: 1, redLight: 1, coldPlunge: 1, fasting: 1, hrtPrep: 0 }
+
+  // Strength is foundational — boost based on age and bone risk
+  if (age >= 35) score.strength += 2
+  if (age >= 40) score.strength += 1
+  if (hair.includes("thinning") || body.includes("recovery")) score.strength += 1
+  if (lowProtein)                  score.strength += 1
+
+  // Sauna — cortisol, hormone shift, recovery
+  if (stress >= 6)                 score.sauna += 2
+  if (hormoneShift)                score.sauna += 2
+  if (body.includes("fatigue"))    score.sauna += 1
+  if (skin.includes("dry") || skin.includes("wrinkles")) score.sauna += 1
+
+  // Sleep — anyone with sleep issues, brain fog, perimenopause
+  if (profile.sleepQuality === "poor")    score.sleep += 3
+  if (profile.wakeNight === "yes")        score.sleep += 2
+  if (profile.wakeNight === "sometimes")  score.sleep += 1
+  if (body.includes("brainfog"))          score.sleep += 1
+  if (hormoneShift)                       score.sleep += 1
+
+  // Creatine — muscle/brain/bone for 35+
+  if (age >= 35)                          score.creatine += 2
+  if (body.includes("brainfog"))          score.creatine += 1
+  if (hair.includes("thinning") || body.includes("recovery")) score.creatine += 1
+  if (lowProtein)                         score.creatine += 1
+
+  // Red light — collagen-dependent skin, hormone shift, energy
+  if (skin.includes("dry") || skin.includes("wrinkles")) score.redLight += 2
+  if (hormoneShift)                                      score.redLight += 1
+  if (age >= 38)                                         score.redLight += 1
+
+  // Cold — only if not already in luteal stress, and stress is moderate/high
+  if (phase !== "luteal" && stress >= 5)  score.coldPlunge += 2
+  if (body.includes("brainfog") && phase !== "luteal") score.coldPlunge += 1
+  if (phase === "luteal")                 score.coldPlunge -= 1
+
+  // Fasting — only without hormone shift, only with insulin/PCOS pattern
+  const pcosLike = (skin.includes("acne") && body.includes("belly") && age <= 42)
+  if (pcosLike && !hormoneShift)          score.fasting += 2
+  if (hormoneShift)                       score.fasting -= 2
+
+  // HRT prep — meaningful only if hormone shift + age 40+
+  if (hormoneShift)                       score.hrtPrep += 3
+  if (age >= 40)                          score.hrtPrep += 2
+  if (age >= 45)                          score.hrtPrep += 1
+
+  return Object.entries(score)
+    .map(([key, s]) => ({ key, score: s }))
+    .sort((a, b) => b.score - a.score)
+    .filter(r => r.score > 0)
+    .slice(0, 4)
+}
+
+// ─── BEAUTY HORMONES MAP (4 hormones × 4 manifestations) ──────────────────────
+// Educational matrix: how 4 key hormones express across skin / hair / body / brain.
+// Source basis: PRODUCT_STRATEGY.md Part 1 pp. 162-170. Wellness frame, not diagnosis.
+const HORMONES_MAP = {
+  estrogen: {
+    icon: "🌸",
+    color: "#9B8FE8",
+    title:     { en: "Estrogen",      uk: "Естроген" },
+    direction: "↓",
+    subtitle:  { en: "decline after 35", uk: "зниження після 35" },
+    cells: {
+      skin:  { en: "Dryness, wrinkles, -1.5%/yr collagen", uk: "Сухість, зморшки, -1.5%/рік колагену" },
+      hair:  { en: "Thinning, temple recession",            uk: "Стоншення, скронева зона" },
+      body:  { en: "-3-8% muscle per decade",               uk: "-3-8% м'язів за декаду" },
+      brain: { en: "Brain fog, memory dips",                uk: "Туман, провали в пам'яті" },
+    },
+    protocol: {
+      en: [
+        "Strength 2x/week — preserves bone + muscle estrogen used to protect",
+        "Phytoestrogens: 30g flaxseed/day, soy, chickpeas — modest support",
+        "Vitamin D3 4000IU + K2 — bone density slips with estrogen",
+        "Sleep 7-8h: deep sleep restores everything else",
+      ],
+      uk: [
+        "Силові 2x/тиждень — зберігають кістки і м'язи, що раніше захищав естроген",
+        "Фітоестрогени: 30г лляного насіння/день, соя, нут — м'яка підтримка",
+        "Вітамін D3 4000МО + K2 — щільність кісток падає з естрогеном",
+        "Сон 7-8 годин: глибокий сон відновлює все інше",
+      ],
+    },
+  },
+  cortisol: {
+    icon: "⚡",
+    color: "#F59E3F",
+    title:     { en: "Cortisol",      uk: "Кортизол" },
+    direction: "↑",
+    subtitle:  { en: "chronic elevation", uk: "хронічне підвищення" },
+    cells: {
+      skin:  { en: "Acne, accelerated aging",                  uk: "Акне, прискорене старіння" },
+      hair:  { en: "Telogen effluvium (3x more under stress)", uk: "Телоген-ефлювій (3x частіше при стресі)" },
+      body:  { en: "Belly fat, insulin resistance",            uk: "Жир на животі, інсулінорезистентність" },
+      brain: { en: "Anxiety, racing thoughts",                 uk: "Тривожність, потік думок" },
+    },
+    protocol: {
+      en: [
+        "Magnesium glycinate 300mg before bed — drops evening cortisol",
+        "Cap caffeine at 1 cup, before noon. Skip in luteal phase",
+        "Walk 20 min outside before 10 AM — anchors cortisol curve",
+        "Box breathing 4-4-4-4 when a spike feels coming",
+      ],
+      uk: [
+        "Магній гліцинат 300мг перед сном — знижує вечірній кортизол",
+        "Кофеїн — макс 1 чашка до обіду. Пропусти у лютеїн",
+        "Прогулянка 20 хв надворі до 10 ранку — налаштовує криву кортизолу",
+        "Дихання box 4-4-4-4, коли відчуваєш сплеск",
+      ],
+    },
+  },
+  progesterone: {
+    icon: "🌙",
+    color: "#4A9EDF",
+    title:     { en: "Progesterone",  uk: "Прогестерон" },
+    direction: "↓",
+    subtitle:  { en: "luteal decline", uk: "падіння у лютеїн" },
+    cells: {
+      skin:  { en: "Inflammation, pre-period breakouts",  uk: "Запалення, висипи перед циклом" },
+      hair:  { en: "Subtle texture changes",              uk: "Тонкі зміни текстури" },
+      body:  { en: "Water retention, breast tenderness",  uk: "Затримка води, чутливість грудей" },
+      brain: { en: "Irritability, insomnia in luteal",    uk: "Дратівливість, безсоння у лютеїн" },
+    },
+    protocol: {
+      en: [
+        "Vitamin B6 (P5P) 50mg — supports luteal progesterone",
+        "Magnesium glycinate — calms GABA where progesterone usually does",
+        "Cool bedroom (18°C) + earlier bedtime in luteal week",
+        "Skip alcohol second half of cycle — disrupts deep sleep further",
+      ],
+      uk: [
+        "Вітамін B6 (P5P) 50мг — підтримує лютеїновий прогестерон",
+        "Магній гліцинат — заспокоює GABA, де раніше це робив прогестерон",
+        "Прохолодна спальня (18°C) + раніше лягати у лютеїновому тижні",
+        "Пропусти алкоголь у другій половині циклу — додатково збиває глибокий сон",
+      ],
+    },
+  },
+  testosterone: {
+    icon: "💪",
+    color: "#4ECBA8",
+    title:     { en: "Testosterone",  uk: "Тестостерон" },
+    direction: "↓",
+    subtitle:  { en: "gradual drop after 35", uk: "поступове падіння після 35" },
+    cells: {
+      skin:  { en: "Thinning, slower healing",   uk: "Стоншена шкіра, повільне загоєння" },
+      hair:  { en: "Texture change, less density", uk: "Зміна текстури, менша густота" },
+      body:  { en: "Muscle loss, slower recovery", uk: "Втрата м'язів, гірше відновлення" },
+      brain: { en: "Low motivation, libido shift", uk: "Низька мотивація, зміна лібідо" },
+    },
+    protocol: {
+      en: [
+        "Heavy strength 2x/week — most direct lever for free testosterone",
+        "Zinc 15mg + vitamin D3 — both required for synthesis",
+        "Sleep 7-8h: testosterone is made overnight",
+        "Creatine 5g/day — synergistic with strength for women 35+",
+      ],
+      uk: [
+        "Важкі силові 2x/тиждень — найпряміший важіль для вільного тестостерону",
+        "Цинк 15мг + вітамін D3 — обидва потрібні для синтезу",
+        "Сон 7-8 годин: тестостерон виробляється вночі",
+        "Креатин 5г/день — синергія з силовими для жінок 35+",
+      ],
+    },
+  },
+}
+
+const HORMONE_PILLARS = [
+  { key: "skin",  emoji: "✨", label: { en: "Skin",  uk: "Шкіра" } },
+  { key: "hair",  emoji: "💇", label: { en: "Hair",  uk: "Волосся" } },
+  { key: "body",  emoji: "🌀", label: { en: "Body",  uk: "Тіло" } },
+  { key: "brain", emoji: "🧠", label: { en: "Brain", uk: "Мозок" } },
+]
+
+// ─── SKIP PRODUCTS (filter traps by symptom profile) ──────────────────────────
+// Trigger keys: skin/hair/body symptom IDs + "hormone_shift" + "luteal_high_stress" + "always".
+const SKIP_PRODUCTS = {
+  collagen_drinks: {
+    name:    { en: "Collagen drinks ($60+ a month)",          uk: "Колагенові напої ($60+ на місяць)" },
+    instead: { en: "30g protein at breakfast",                 uk: "30г білка на сніданок" },
+    why:     { en: "Mostly hydrolyzed peptides + sugar. Real protein at breakfast does more for skin and costs less.",
+               uk: "Здебільшого гідролізовані пептиди + цукор. Білок зранку дає шкірі більше і коштує менше." },
+    triggers: ["always"],
+  },
+  led_mask_only: {
+    name:    { en: "$400 LED mask as 'main protocol'",        uk: "Дорога LED-маска як «основний протокол»" },
+    instead: { en: "Sauna 3x/week + strength 2x/week",         uk: "Сауна 3р/тиж + силові 2р/тиж" },
+    why:     { en: "Sauna ★★★★★ vs LED ★★★★ for skin and longevity (Часть 1, р. 152). Same money, 5x the result.",
+               uk: "Сауна ★★★★★ проти LED ★★★★ для шкіри і довголіття. Ті ж гроші — у 5 разів більше ефекту." },
+    triggers: ["wrinkles", "dull", "always"],
+  },
+  expensive_eye_cream: {
+    name:    { en: "$120 'anti-aging' eye creams",            uk: "Дорогі «anti-age» креми для очей ($120)" },
+    instead: { en: "Sleep + SPF + hydration",                  uk: "Сон + SPF + зволоження" },
+    why:     { en: "Skin under the eyes is too thin to absorb most actives. Sleep and sunscreen do 90% for free.",
+               uk: "Шкіра під очима занадто тонка щоб всмоктати активи. Сон + SPF — 90% результату безкоштовно." },
+    triggers: ["puffiness", "wrinkles", "always"],
+  },
+  detox_tea: {
+    name:    { en: "'Hormone detox' teas + cleanses",         uk: "«Детокс гормонів» — чаї і очистки" },
+    instead: { en: "Liver does it for free + fiber",           uk: "Печінка робить це безкоштовно + клітковина" },
+    why:     { en: "Most contain laxatives — water loss, not hormone clearance. Liver detoxes estrogen on its own.",
+               uk: "Більшість містять проносне — це втрата води, а не гормонів. Печінка чистить естроген сама." },
+    triggers: ["always"],
+  },
+  retinol_acid_combo: {
+    name:    { en: "Retinol + AHA/BHA layered together",      uk: "Ретинол + AHA/BHA одним шаром" },
+    instead: { en: "Alternate nights + ceramides",             uk: "Чергуй через ніч + кераміди" },
+    why:     { en: "Layering on a reactive barrier = redness, breakouts, broken capillaries. Alternate, never stack.",
+               uk: "Один шар на реактивний бар'єр = почервоніння, висипання, лопнуті судини. Чергуй, не стакай." },
+    triggers: ["sensitive"],
+  },
+  foam_sls_cleanser: {
+    name:    { en: "Foaming SLS / sulfate cleansers",         uk: "Гелі-пінки з SLS / сульфатами" },
+    instead: { en: "Milk or balm cleanser",                    uk: "Молочко або бальзам для вмивання" },
+    why:     { en: "Strip the lipids your barrier is already missing. Tight 'squeaky-clean' feel = damaged skin.",
+               uk: "Змивають останні ліпіди — а їх і так бракує. Відчуття «скрипу» = пошкоджений бар'єр." },
+    triggers: ["dry", "sensitive"],
+  },
+  heavy_oils_acne: {
+    name:    { en: "Coconut / cocoa butter on face",          uk: "Кокосове / какао-масло на обличчя" },
+    instead: { en: "Squalane or jojoba",                       uk: "Скволан або жожоба" },
+    why:     { en: "Comedogenic — sits on top of pores. Squalane gives the same feel without the breakouts.",
+               uk: "Комедогенне — сидить на порах. Скволан дає той самий ефект без висипань." },
+    triggers: ["acne", "oily"],
+  },
+  biotin_megadose: {
+    name:    { en: "High-dose biotin (5000+ mcg)",            uk: "Великі дози біотину (5000+ мкг)" },
+    instead: { en: "Test ferritin + protein at breakfast",     uk: "Перевір феритин + білок на сніданок" },
+    why:     { en: "Skews thyroid + troponin labs, can trigger acne. Hair thinning is almost always ferritin/protein, not biotin.",
+               uk: "Спотворює аналізи щитовидки і тропоніну, провокує акне. Тонке волосся = феритин/білок, не біотин." },
+    triggers: ["thinning", "shedding", "acne"],
+  },
+  cardio_for_belly: {
+    name:    { en: "Hours of cardio for belly fat",           uk: "Години кардіо проти жиру на животі" },
+    instead: { en: "Strength 2-3x/week + protein",             uk: "Силові 2-3р/тиж + білок" },
+    why:     { en: "After 35 long cardio raises cortisol and shrinks muscle — belly stays. Strength + protein win this.",
+               uk: "Після 35 тривале кардіо ↑ кортизол і ↓ м'язи — живіт залишається. Силові + білок виграють." },
+    triggers: ["belly", "hormone_shift"],
+  },
+  cold_plunge_luteal: {
+    name:    { en: "Daily ice baths in luteal phase",         uk: "Щоденні крижані ванни в лютеїновій фазі" },
+    instead: { en: "Sauna or warm walk instead",               uk: "Замість — сауна або теплі прогулянки" },
+    why:     { en: "Cortisol is already elevated second half of cycle. Cold spikes it further — sleep and mood worsen.",
+               uk: "У другій половині циклу кортизол і так високий. Холод ↑ ще — сон і настрій страждають." },
+    triggers: ["luteal_high_stress"],
+  },
+  greens_powder: {
+    name:    { en: "$80 'super greens' powders",              uk: "Дорогі «super greens» порошки ($80)" },
+    instead: { en: "Ferritin / B12 / vitamin D panel",         uk: "Феритин / B12 / вітамін D панель" },
+    why:     { en: "Trace amounts of dozens of plants ≠ protein, fiber, or real food. Test what's actually low first.",
+               uk: "Сліди десятків рослин ≠ білок, клітковина чи їжа. Спочатку перевір, чого реально бракує." },
+    triggers: ["fatigue", "brainfog"],
+  },
+  fragrance_lotion: {
+    name:    { en: "Fragranced body lotions",                 uk: "Парфумовані лосьйони для тіла" },
+    instead: { en: "Unscented ceramide formula",               uk: "Без аромату, з керамідами" },
+    why:     { en: "Largest organ + reactive skin = the wrong place for parfum. Unscented ceramides are safer and cheaper.",
+               uk: "Найбільший орган + реактивна шкіра = не місце для парфуму. Без аромату з керамідами — безпечніше і дешевше." },
+    triggers: ["sensitive"],
+  },
+  alcohol_toner: {
+    name:    { en: "Alcohol-based 'oil control' toners",      uk: "Тоніки з алкоголем для «контролю жиру»" },
+    instead: { en: "BHA 1-2x/week + niacinamide",              uk: "BHA 1-2р/тиж + ніацинамід" },
+    why:     { en: "Strip oil → skin overproduces more. Niacinamide regulates sebum without rebound.",
+               uk: "Знімають жир → шкіра виробляє ще більше. Ніацинамід регулює себум без відскоку." },
+    triggers: ["oily", "acne"],
+  },
+}
+
+// Picks 5-8 most relevant skip-products for a profile (sorted by trigger hits).
+function getSkipProducts(profile) {
+  const skin   = profile.skinSymptoms || []
+  const hair   = profile.hairSymptoms || []
+  const body   = profile.bodySymptoms || []
+  const stress = parseInt(profile.stressLevel) || 5
+  const phase  = getPhase(calcCycleDay(profile), parseInt(profile.cycleLength) || 28)
+  const hormoneShift = isHormoneShiftDetected(profile)
+
+  const userTriggers = new Set([...skin, ...hair, ...body])
+  if (hormoneShift) userTriggers.add("hormone_shift")
+  if (phase === "luteal" && stress >= 6) userTriggers.add("luteal_high_stress")
+
+  const ranked = Object.entries(SKIP_PRODUCTS)
+    .map(([key, item]) => {
+      const hits = item.triggers.filter(t => t !== "always" && userTriggers.has(t)).length
+      const isAlways = item.triggers.includes("always")
+      return { key, item, score: hits + (isAlways ? 0.5 : 0) }
+    })
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  return ranked.slice(0, 8)
 }
 
 // ─── UI PRIMITIVES ────────────────────────────────────────────────────────────
@@ -679,7 +1155,7 @@ const OPTIONS = {
     { id: "fatigue",   en: "Constant fatigue",           uk: "Постійна втома" },
     { id: "brainfog",  en: "Brain fog",                  uk: "Туман в голові" },
     { id: "recovery",  en: "Poor muscle recovery",       uk: "Поганий відновлення м'язів" },
-    { id: "libido",    en: "Low libido",                 uk: "Знижене лібідо" },
+    { id: "morningEnergy", en: "Low morning energy",     uk: "Низька ранкова енергія" },
     { id: "joints",    en: "Joint stiffness / pain",     uk: "Скутість / біль у суглобах" },
     { id: "bloating",  en: "Bloating / digestive issues",uk: "Здуття / кишківник" },
   ],
@@ -1098,6 +1574,10 @@ function ReportScreen({ profile, onDone, onChat, lang }) {
   const phase        = PHASE_NAMES[phaseKey]
   const hormoneShift = isHormoneShiftDetected(profile)
   const hormoneCause = hormoneShift ? CAUSE_DATA.hormone_shift : null
+  const biohackerRecs = generateBiohackerRecs(profile)
+  const skipProducts  = getSkipProducts(profile)
+  const [bioOpen, setBioOpen] = useState(null)
+  const [hormoneOpen, setHormoneOpen] = useState(null)
 
   const weekTasks = uk ? [
     { time: "Ранок", action: "Магній гліцинат 300мг + D3 2000МО з їжею" },
@@ -1220,6 +1700,169 @@ function ReportScreen({ profile, onDone, onChat, lang }) {
           </>
         )}
 
+        {/* Section: Your Biohacker Stack */}
+        <div style={{ height: 24 }} />
+        <SectionLabel>{uk ? "ТВІЙ БІОХАКЕР-СТЕК" : "YOUR BIOHACKER STACK"}</SectionLabel>
+        <p style={{ fontSize: 12, color: "#6B7A8D", lineHeight: 1.6, margin: "0 4px 14px" }}>
+          {uk
+            ? "Топ-інструменти longevity для твого профілю. З female-specific нюансами і evidence-рейтингом — без LED-масок і трендів TikTok."
+            : "Top longevity tools for your profile. Female-specific caveats and evidence ratings — no LED masks, no TikTok trends."}
+        </p>
+        {biohackerRecs.map(rec => {
+          const tool = BIOHACKER_STACK[rec.key]
+          if (!tool) return null
+          const isOpen = bioOpen === rec.key
+          const stars = "★".repeat(tool.evidence) + "☆".repeat(5 - tool.evidence)
+          return (
+            <Card key={rec.key} style={{ marginBottom: 10, padding: 0, overflow: "hidden" }}>
+              <button
+                onClick={() => setBioOpen(isOpen ? null : rec.key)}
+                style={{ width: "100%", background: "transparent", border: "none", padding: "16px 18px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}
+              >
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, rgba(245,158,63,0.15), rgba(78,203,168,0.13))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
+                  {tool.icon}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#1A2433" }}>{tool.title[L]}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                    <span style={{ fontSize: 11, color: "#F59E3F", letterSpacing: "1px" }}>{stars}</span>
+                    <span style={{ fontSize: 11, color: "#6B7A8D" }}>· {tool.cost[L]}</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: 14, color: "#4A9EDF", flexShrink: 0, transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.18s" }}>›</div>
+              </button>
+              <div style={{ padding: "0 18px 14px", fontSize: 13, color: "#1A2433", lineHeight: 1.55 }}>
+                {tool.why[L]}
+              </div>
+              {isOpen && (
+                <div style={{ padding: "14px 18px 18px", borderTop: "1px solid rgba(74,158,223,0.1)", background: "rgba(245,249,255,0.6)" }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#9B8FE8", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 6 }}>
+                      {uk ? "♀ Жіночі нюанси" : "♀ Female caveats"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#1A2433", lineHeight: 1.55 }}>{tool.femaleCaveat[L]}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#4ECBA8", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 6 }}>
+                      {uk ? "Як почати" : "How to start"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#1A2433", lineHeight: 1.55 }}>{tool.howToStart[L]}</div>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )
+        })}
+        <p style={{ fontSize: 11, color: "#6B7A8D", lineHeight: 1.6, margin: "10px 4px 0", textAlign: "center" }}>
+          {uk
+            ? "Тапни картку щоб побачити жіночі нюанси і покроковий план старту."
+            : "Tap a card to see female caveats and a week-by-week starter plan."}
+        </p>
+
+        {/* Section: Beauty Hormones Map */}
+        <div style={{ height: 24 }} />
+        <SectionLabel>{uk ? "ТВОЯ КАРТА ГОРМОНІВ КРАСИ" : "YOUR BEAUTY HORMONES MAP"}</SectionLabel>
+        <p style={{ fontSize: 12, color: "#6B7A8D", lineHeight: 1.6, margin: "0 4px 14px" }}>
+          {uk
+            ? "Як 4 ключові гормони проявляються у шкірі, волоссі, тілі та мозку. Тапни рядок — побачиш протокол."
+            : "How 4 key hormones express across skin, hair, body and brain. Tap a row to see the protocol."}
+        </p>
+
+        {/* Column legend */}
+        <div style={{ display: "flex", gap: 6, padding: "0 8px 10px 88px" }}>
+          {HORMONE_PILLARS.map(p => (
+            <div key={p.key} style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ fontSize: 14 }}>{p.emoji}</div>
+              <div style={{ fontSize: 9, fontWeight: 800, color: "#6B7A8D", textTransform: "uppercase", letterSpacing: "0.4px", marginTop: 1 }}>
+                {p.label[L]}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {Object.entries(HORMONES_MAP).map(([key, h]) => {
+          const isOpen = hormoneOpen === key
+          return (
+            <Card key={key} style={{ marginBottom: 8, padding: 0, overflow: "hidden", borderLeft: `3px solid ${h.color}` }}>
+              <button
+                onClick={() => setHormoneOpen(isOpen ? null : key)}
+                style={{ width: "100%", background: "transparent", border: "none", padding: "12px 14px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+              >
+                <div style={{ width: 76, flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 9, background: `${h.color}22`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+                    {h.icon}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: h.color, lineHeight: 1.1 }}>
+                    {h.title[L]}
+                    <div style={{ fontSize: 11, fontWeight: 800, color: h.color, marginTop: 1 }}>{h.direction}</div>
+                  </div>
+                </div>
+                {HORMONE_PILLARS.map(p => (
+                  <div key={p.key} style={{ flex: 1, fontSize: 9.5, lineHeight: 1.35, color: "#1A2433", textAlign: "center", padding: "0 2px" }}>
+                    {h.cells[p.key][L]}
+                  </div>
+                ))}
+              </button>
+              {isOpen && (
+                <div style={{ padding: "14px 18px 18px", borderTop: `1px solid ${h.color}22`, background: `${h.color}0d` }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: h.color, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 4 }}>
+                    {h.title[L]} {h.direction} · {h.subtitle[L]}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#4ECBA8", textTransform: "uppercase", letterSpacing: "0.6px", margin: "10px 0 8px" }}>
+                    {uk ? "Що допомагає" : "What helps"}
+                  </div>
+                  {h.protocol[L].map((p, j) => (
+                    <div key={j} style={{ display: "flex", gap: 8, fontSize: 12, color: "#1A2433", marginBottom: j < h.protocol[L].length - 1 ? 8 : 0, lineHeight: 1.5 }}>
+                      <span style={{ color: h.color, fontWeight: 800, flexShrink: 0 }}>·</span>
+                      <span>{p}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )
+        })}
+        <p style={{ fontSize: 11, color: "#6B7A8D", lineHeight: 1.6, margin: "10px 4px 0", textAlign: "center" }}>
+          {uk
+            ? "Не діагноз — освітня карта. Один симптом часто = декілька гормонів."
+            : "Not a diagnosis — an educational map. One symptom often = several hormones."}
+        </p>
+
+        {/* Section: Skip Products */}
+        <div style={{ height: 24 }} />
+        <SectionLabel>{uk ? "ПРОПУСТИ ЦІ ПРОДУКТИ — НЕ ДЛЯ ТВОГО ПРОФІЛЮ" : "SKIP THESE — NOT FOR YOUR PROFILE"}</SectionLabel>
+        <p style={{ fontSize: 12, color: "#6B7A8D", lineHeight: 1.6, margin: "0 4px 14px" }}>
+          {uk
+            ? "Те, що маркетинг продає твоїй віковій групі, але не працює для твоїх симптомів — або шкодить."
+            : "What marketing sells to your age bracket but doesn't fit your symptoms — or actively backfires."}
+        </p>
+
+        {skipProducts.map(({ key, item }) => (
+          <Card key={key} style={{ marginBottom: 8, padding: "12px 14px", borderLeft: "3px solid #F59E3F" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <div style={{ width: 24, height: 24, borderRadius: 7, background: "#F59E3F22", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 13 }}>
+                ✕
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#1A2433", lineHeight: 1.35, textDecoration: "line-through", textDecorationColor: "#F59E3F88" }}>
+                  {item.name[L]}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#4ECBA8", textTransform: "uppercase", letterSpacing: "0.4px", marginTop: 6 }}>
+                  {uk ? "Натомість" : "Instead"} → <span style={{ color: "#1A2433", textTransform: "none", letterSpacing: 0, fontWeight: 700 }}>{item.instead[L]}</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#6B7A8D", lineHeight: 1.5, marginTop: 6 }}>
+                  {item.why[L]}
+                </div>
+              </div>
+            </div>
+          </Card>
+        ))}
+        <p style={{ fontSize: 11, color: "#6B7A8D", lineHeight: 1.6, margin: "10px 4px 0", textAlign: "center" }}>
+          {uk
+            ? "Економія тут = бюджет на сауну, силові і феритин-панель."
+            : "Money saved here = budget for sauna, strength, and a ferritin panel."}
+        </p>
+
         {/* Section: Week protocol */}
         <div style={{ height: 24 }} />
         <SectionLabel>{uk ? "ПРОТОКОЛ ТИЖНЯ" : "WEEKLY PROTOCOL"}</SectionLabel>
@@ -1232,9 +1875,9 @@ function ReportScreen({ profile, onDone, onChat, lang }) {
           ))}
         </Card>
 
-        {/* Section: Beauty routine */}
+        {/* Section: Skin Longevity Protocol */}
         <div style={{ height: 24 }} />
-        <SectionLabel>{uk ? "БЬЮТІ РУТИНА" : "BEAUTY ROUTINE"}</SectionLabel>
+        <SectionLabel>{uk ? "ПРОТОКОЛ ДОВГОЛІТТЯ ШКІРИ" : "SKIN LONGEVITY PROTOCOL"}</SectionLabel>
         <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
           {[
             { label: uk ? "🌅 Ранок" : "🌅 Morning", steps: beauty.morning },
@@ -1322,8 +1965,8 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
   const phaseRec     = PHASE_RECS[phaseKey]
   const [activityDays, setActivityDays] = useState(() => lsGet("vive_activity_days", []))
   const streak       = calcStreak(history, activityDays)
-  const [timeFilter, setTimeFilter] = useState("30")
-  const tasks        = getTimeTasks(timeFilter, phaseKey, uk)
+  const [dayTab, setDayTab] = useState("morning")
+  const tasks        = getTabTasks(dayTab, phaseKey, uk)
   const protocol     = getDefaultProtocol(uk)
   const longevity    = calcLongevityMarkers(history)
   const phaseProtocol = generatePhaseProtocol(profile, phaseKey, uk)
@@ -1346,6 +1989,36 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
     lsSet("vive_milestone_" + milestoneStreak + "_seen", true)
     setMilestoneSeen(true)
   }
+
+  // Fire push + email once per milestone (vive_milestone_<n>_sent flag)
+  useEffect(() => {
+    if (!milestoneStreak) return
+    const sentKey = "vive_milestone_" + milestoneStreak + "_sent"
+    if (lsGet(sentKey, false)) return
+
+    const pushOn  = lsGet("vive_notify_push", false)
+    const emailOn = lsGet("vive_notify_email_on", false)
+    const email   = lsGet("vive_notify_email", "")
+    if (!pushOn && !(emailOn && email)) return
+
+    let sent = false
+    ;(async () => {
+      if (pushOn) {
+        const ok = await showLocalMilestoneNotification({
+          milestone: milestoneStreak, lang, insights: milestoneInsights,
+        })
+        if (ok) sent = true
+      }
+      if (emailOn && email) {
+        const r = await sendMilestoneEmail({
+          email, name: profile.name || "", milestone: milestoneStreak,
+          lang, insights: milestoneInsights,
+        })
+        if (r && r.ok) sent = true
+      }
+      if (sent) lsSet(sentKey, true)
+    })()
+  }, [milestoneStreak])
 
   const [done, setDone] = useState(() => {
     const saved = lsGet("vive_tasks_done", { date: "", done: [] })
@@ -1511,17 +2184,21 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
           </Card>
         )}
 
-        {/* Time filter */}
+        {/* Day tabs: Morning / Movement / Evening */}
         <div style={{ fontSize: 12, fontWeight: 800, color: "#6B7A8D", letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 8 }}>
-          {uk ? "Скільки часу маєш сьогодні?" : "How much time do you have?"}
+          {uk ? "Що зараз?" : "What now?"}
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          {[["10", uk ? "10 хв" : "10 min"], ["30", uk ? "30 хв" : "30 min"], ["60", uk ? "1 год" : "1 hr"]].map(([val, label]) => (
-            <button key={val} onClick={() => setTimeFilter(val)} style={{
-              flex: 1, padding: "8px 0", borderRadius: 12, fontSize: 13, fontWeight: timeFilter === val ? 800 : 500,
-              border: timeFilter === val ? "1.5px solid #4A9EDF" : "1.5px solid rgba(107,122,141,0.18)",
-              background: timeFilter === val ? "rgba(74,158,223,0.1)" : "rgba(255,255,255,0.6)",
-              color: timeFilter === val ? "#4A9EDF" : "#6B7A8D", cursor: "pointer", fontFamily: "inherit",
+          {[
+            ["morning",  uk ? "🌅 Ранок"  : "🌅 Morning"],
+            ["movement", uk ? "🏃 Рух"    : "🏃 Movement"],
+            ["evening",  uk ? "🌙 Вечір"  : "🌙 Evening"],
+          ].map(([val, label]) => (
+            <button key={val} onClick={() => setDayTab(val)} style={{
+              flex: 1, padding: "8px 0", borderRadius: 12, fontSize: 13, fontWeight: dayTab === val ? 800 : 500,
+              border: dayTab === val ? "1.5px solid #4A9EDF" : "1.5px solid rgba(107,122,141,0.18)",
+              background: dayTab === val ? "rgba(74,158,223,0.1)" : "rgba(255,255,255,0.6)",
+              color: dayTab === val ? "#4A9EDF" : "#6B7A8D", cursor: "pointer", fontFamily: "inherit",
             }}>{label}</button>
           ))}
         </div>
@@ -1811,7 +2488,7 @@ function CustomSlider({ min, max, value, onChange }) {
 // ─── SCREEN 7: CHECK-IN ───────────────────────────────────────────────────────
 function CheckInScreen({ history, setHistory, lang, onBack }) {
   const uk = lang === "uk"
-  const [vals, setVals] = useState({ energy: 5, sleep: 7, mood: 5, water: 6, move: null, proteinHit: null, strengthDone: null })
+  const [vals, setVals] = useState({ energy: 5, sleep: 7, mood: 5, recovery: 7, move: null, proteinHit: null, strengthDone: null })
   const [saved, setSaved] = useState(false)
 
   const doneToday = history.some(h => h.date?.startsWith(todayStr()))
@@ -1882,9 +2559,9 @@ function CheckInScreen({ history, setHistory, lang, onBack }) {
         <SliderRow label={uk ? "Настрій" : "Mood"} valKey="mood" min={1} max={10}
           formatVal={n => `${n <= 3 ? "😔" : n <= 6 ? "😐" : "😊"} ${n}/10`}
           minLabel="😔 1" maxLabel="10 😊" />
-        <SliderRow label={uk ? "Вода (скл.)" : "Water (gl.)"} valKey="water" min={1} max={10}
-          formatVal={n => `${n} ${uk ? "скл." : "gl."}`}
-          minLabel="1" maxLabel="10" />
+        <SliderRow label={uk ? "Відновлення" : "Recovery"} valKey="recovery" min={1} max={10}
+          formatVal={n => `${n}/10`}
+          minLabel={uk ? "🪫 Розбита" : "🪫 Drained"} maxLabel={uk ? "🔋 Свіжа" : "🔋 Fresh"} />
 
         <div style={{ marginBottom: 28 }}>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>{uk ? "Рух сьогодні?" : "Movement today?"}</div>
@@ -2065,6 +2742,38 @@ function ProfileScreen({ profile, onBack, onReset, lang }) {
   const phaseKey = getPhase(cycleDay, parseInt(profile.cycleLength) || 28)
   const phaseRec = PHASE_RECS[phaseKey]
 
+  // Notification opt-in (P0.4)
+  const [pushOn,  setPushOn]  = useState(() => lsGet("vive_notify_push", false))
+  const [emailOn, setEmailOn] = useState(() => lsGet("vive_notify_email_on", false))
+  const [email,   setEmail]   = useState(() => lsGet("vive_notify_email", ""))
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushErr,  setPushErr]  = useState("")
+  const pushSupported = typeof window !== "undefined" && "Notification" in window && "serviceWorker" in navigator
+  const browserPerm   = pushSupported ? Notification.permission : "unsupported"
+
+  async function togglePush() {
+    setPushErr("")
+    if (pushOn) {
+      setPushOn(false); lsSet("vive_notify_push", false); return
+    }
+    if (!pushSupported) { setPushErr(uk ? "Браузер не підтримує сповіщення" : "Browser does not support notifications"); return }
+    setPushBusy(true)
+    const perm = await requestPushPermission()
+    setPushBusy(false)
+    if (perm === "granted") { setPushOn(true); lsSet("vive_notify_push", true) }
+    else if (perm === "denied") setPushErr(uk ? "Дозвіл заблоковано в налаштуваннях браузера" : "Permission blocked in browser settings")
+    else setPushErr(uk ? "Дозвіл не надано" : "Permission not granted")
+  }
+
+  function toggleEmail() {
+    const next = !emailOn
+    setEmailOn(next); lsSet("vive_notify_email_on", next)
+  }
+
+  function saveEmail(v) {
+    setEmail(v); lsSet("vive_notify_email", v)
+  }
+
   return (
     <div style={{ ...S.screen, display: "flex", flexDirection: "column" }}>
       <Blob top={-60} right={-40} size={200} color="rgba(74,158,223,0.09)" />
@@ -2099,7 +2808,7 @@ function ProfileScreen({ profile, onBack, onReset, lang }) {
         </Card>
 
         {/* Stats */}
-        <Card style={{ marginBottom: 24 }}>
+        <Card style={{ marginBottom: 16 }}>
           {[
             { label: uk ? "Цикл"          : "Cycle length", value: `${parseInt(profile.cycleLength) || 28} ${uk ? "днів" : "days"}` },
             { label: uk ? "Головна ціль"  : "Main goal",    value: profile.mainGoal || "—" },
@@ -2110,6 +2819,73 @@ function ProfileScreen({ profile, onBack, onReset, lang }) {
               <div style={{ fontSize: 13, fontWeight: 700, color: "#1A2433" }}>{row.value}</div>
             </div>
           ))}
+        </Card>
+
+        {/* Notifications opt-in (P0.4 — milestones 30/60/90) */}
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#6B7A8D", letterSpacing: "0.8px", textTransform: "uppercase", margin: "8px 4px 8px" }}>
+          {uk ? "СПОВІЩЕННЯ" : "NOTIFICATIONS"}
+        </div>
+        <Card style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 13, color: "#6B7A8D", lineHeight: 1.5, marginBottom: 14 }}>
+            {uk
+              ? "Сповіщаємо коли ти сягнеш 30, 60 чи 90 днів стріку — з топ-3 метриками, що покращились."
+              : "We'll ping you at 30, 60, and 90-day streaks — with the top 3 metrics that improved."}
+          </div>
+
+          {/* Push toggle */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 14, marginBottom: 14, borderBottom: "1px solid rgba(74,158,223,0.08)" }}>
+            <div style={{ flex: 1, paddingRight: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#1A2433" }}>{uk ? "Push-сповіщення" : "Push notifications"}</div>
+              <div style={{ fontSize: 11, color: "#6B7A8D", marginTop: 2 }}>
+                {uk ? "На пристрій (PWA)" : "On this device (PWA)"}
+              </div>
+            </div>
+            <button onClick={togglePush} disabled={pushBusy} aria-label="toggle push" style={{
+              width: 46, height: 26, borderRadius: 14, border: "none", cursor: pushBusy ? "wait" : "pointer",
+              background: pushOn ? "#4ECBA8" : "rgba(107,122,141,0.25)", position: "relative", transition: "background .2s",
+              fontFamily: "inherit", padding: 0, flexShrink: 0,
+            }}>
+              <span style={{ position: "absolute", top: 3, left: pushOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left .2s" }} />
+            </button>
+          </div>
+          {pushErr && (
+            <div style={{ fontSize: 11, color: "#E05252", marginTop: -8, marginBottom: 12 }}>{pushErr}</div>
+          )}
+          {!pushSupported && (
+            <div style={{ fontSize: 11, color: "#6B7A8D", marginTop: -8, marginBottom: 12, fontStyle: "italic" }}>
+              {uk ? "Підказка: на iOS додай Alex на Home Screen — push працює лише з PWA." : "Tip: on iOS, add Alex to Home Screen — push only works in PWA mode."}
+            </div>
+          )}
+
+          {/* Email toggle + input */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: emailOn ? 12 : 0 }}>
+            <div style={{ flex: 1, paddingRight: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#1A2433" }}>{uk ? "Email" : "Email"}</div>
+              <div style={{ fontSize: 11, color: "#6B7A8D", marginTop: 2 }}>
+                {uk ? "Лист на milestone-день" : "Email on milestone day"}
+              </div>
+            </div>
+            <button onClick={toggleEmail} aria-label="toggle email" style={{
+              width: 46, height: 26, borderRadius: 14, border: "none", cursor: "pointer",
+              background: emailOn ? "#4ECBA8" : "rgba(107,122,141,0.25)", position: "relative", transition: "background .2s",
+              fontFamily: "inherit", padding: 0, flexShrink: 0,
+            }}>
+              <span style={{ position: "absolute", top: 3, left: emailOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left .2s" }} />
+            </button>
+          </div>
+          {emailOn && (
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => saveEmail(e.target.value)}
+              placeholder={uk ? "you@email.com" : "you@email.com"}
+              style={{
+                width: "100%", padding: "10px 14px", borderRadius: 12, fontSize: 14, fontFamily: "inherit",
+                border: "1.5px solid rgba(107,122,141,0.18)", background: "rgba(255,255,255,0.7)",
+                color: "#1A2433", outline: "none",
+              }}
+            />
+          )}
         </Card>
 
         {/* Reset */}
