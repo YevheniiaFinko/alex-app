@@ -2749,7 +2749,6 @@ function ProfileScreen({ profile, onBack, onReset, lang }) {
   const [pushBusy, setPushBusy] = useState(false)
   const [pushErr,  setPushErr]  = useState("")
   const pushSupported = typeof window !== "undefined" && "Notification" in window && "serviceWorker" in navigator
-  const browserPerm   = pushSupported ? Notification.permission : "unsupported"
 
   async function togglePush() {
     setPushErr("")
