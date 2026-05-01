@@ -1,7 +1,7 @@
 # Alex — Технічний план
 *AI Longevity Coach для жінок 35+ | Apple Glassmorphism + Multi-screen Flow*
 
-*Останнє оновлення: 29 квітня 2026 (P0.4 30-day Milestone Notification — done)*
+*Останнє оновлення: 30 квітня 2026 (P1.3 Daily Symptom Log — done)*
 
 ---
 
@@ -169,7 +169,7 @@ CAUSE_DATA = {
 - Функція `generateBiohackerRecs(profile)` → топ-3-4 для конкретного профілю. ✅
 - Нова секція "Your Biohacker Stack" в Report (після Hormone shifts). ✅
 - Заміна `getDefaultProtocol` → sauna 3x + strength 2x + quarterly biomarkers (видаляємо cosmetologist + LED mask). ✅
-- Переробка time-tabs з `10/30/60 хв` → `Morning / Movement / Evening`. ⏳ (відкладено окремим кроком — не блокує P0.1)
+- Переробка time-tabs з `10/30/60 хв` → `Morning / Movement / Evening`. ✅ (`getTabTasks` р.508, UI рр.2187-2204, default `dayTab="morning"`)
 
 **P0.2 — Beauty Hormones Map** (W3 №1 зі стратегії 5.7) ✅:
 - `HORMONES_MAP` — 4 гормони (estrogen / cortisol / progesterone / testosterone) × 4 прояви (skin / hair / body / brain) + протокол з 4 пунктів на гормон. ✅
@@ -196,23 +196,125 @@ CAUSE_DATA = {
 - Trigger в `DashboardScreen` через `useEffect([milestoneStreak])`: коли `streak ∈ {30, 60, 90}` і `vive_milestone_<n>_sent !== true` — шлемо push (якщо `vive_notify_push`) і/або email (якщо `vive_notify_email_on` + `vive_notify_email`), маркуємо `_sent` flag. Existing `_seen` banner-flag не чіпаємо. ✅
 - Профіль screen: нова секція "СПОВІЩЕННЯ" / "NOTIFICATIONS" — два toggle (push / email) + email input. iOS-підказка "додай на Home Screen для PWA push". EN+UK. ✅
 
-**P0.5 — Cleanup існуючих фіч:**
-- "Body symptoms → low libido" → замінити на "morning energy / muscle stiffness / recovery".
-- Check-in "water glasses" слайдер → замінити на "recovery score" (1-10).
-- Перейменувати "Beauty routine" → "Skin Longevity Protocol" (UI + код).
+**P0.5 — Cleanup існуючих фіч:** ✅
+- "Body symptoms → low libido" → видалено, замінено на `morningEnergy / recovery / joints` (OPTIONS.body рр.1153-1161). ✅
+- Check-in "water glasses" слайдер → `Recovery 1-10` (CHECKIN_METRICS р.80, slider р.2562, valKey="recovery"). ✅
+- Перейменування "Beauty routine" → "ПРОТОКОЛ ДОВГОЛІТТЯ ШКІРИ / SKIN LONGEVITY PROTOCOL" (Report р.1880). ✅
 
-### Високий пріоритет
+---
 
-#### 1. Claude API integration (Chat → real AI)
+### ✅ P0 ЗАКРИТО ПОВНІСТЮ (29.04.2026)
+
+P0.1 + P0.2 + P0.3 + P0.4 + P0.5 — done. Build pass (272KB → 90KB gzip).
+
+---
+
+### 🔵 P1 — Atta-inspired UX (затверджено 29.04.2026 після аналізу Atta app)
+
+Атта (cycle tracker) має сильніший logging UX і візуалізації — беремо найкорисніше і накладаємо на наш longevity-frame. Це швидкий шлях до того щоб Alex виглядав як зрілий продукт, а не MVP.
+
+**P1.1 — Hormone Curves Chart** ✅ (highest impact):
+- SVG-графік з кривими estrogen / progesterone / testosterone × cycle day (0-28). ✅
+- Поточний день — вертикальна лінія + tooltip з рівнями (Естроген/Прогестерон/Тестостерон у %). ✅
+- Розміщено в Progress screen новою секцією зверху (над legend + grid). ✅
+- Дані: математичні криві (Gaussian-based, базис Cleveland Clinic 2026), не реальні лаби. ✅
+- 1 короткий biohacker-narrative під кривими, залежно від фази (4 phase × EN+UK). ✅
+- EN+UK + footnote "Reference curves — not lab values". ✅
+- Phase tint bands (menstrual #9B8FE8 / ovulation #4A9EDF) як фон. ✅
+- Кольори кривих: estrogen #9B8FE8, progesterone #4A9EDF, testosterone #4ECBA8. ✅
+- Без "inner autumn" фреймів — biohacker tone. ✅
+- Компонент `HormoneCurvesChart` (~р.2598 у `alex-app.jsx`).
+- Базис: Atta IMG_6051.
+
+**P1.2 — Cycle Disrupters в check-in** ✅ (30.04.2026):
+- Нова секція в `CheckInScreen` — multi-select chips: Travel, Stress, Trauma, Late nights, Jet lag, Medication, Alcohol, Sickness. ✅
+- Зберігати в `vive_history[i].disrupters` як array. ✅
+- Враховувати в `getRootCauses(profile, history)` — last 7 check-ins, ≥2 повторів = pattern. jet_lag+late_nights → cortisol +1 (combo bonus поверх індивідуальних +1 кожен). stress/travel/trauma → cortisol +1. alcohol/sickness → inflammation +1. ✅
+- `getMilestoneInsight` ("disrupters down") — TODO P1.3 разом із symptom log.
+- EN+UK ✅ (DISRUPTERS const р.~1200, секція в CheckInScreen).
+- Базис: Atta IMG_6045.
+
+**P1.3 — Daily Symptom Log** ✅ (30.04.2026, inline в check-in):
+- `SYMPTOMS_LOG` const (р.~1230) — 5 категорій × 10-11 chips: Mood (10), Sleep (10), Gut (10), Cravings (10), Body (11). Без fertility/sex/tests. EN+UK на всіх. ✅
+- Нова секція "Today's symptoms / Симптоми сьогодні" в `CheckInScreen` (після disrupters) — категорії з uppercase-заголовками, multi-select chips через `toggle()`. ✅
+- Custom text input "Other / Інше" → префіксується як `custom:<text>` і кладеться в той самий symptoms array. ✅
+- Зберігається в `vive_history[i].symptoms` (array of ids). ✅
+- НЕ скопійовано Atta "Sex & pleasure" і "Tests" — biohacker longevity frame, fertility не наш. ✅
+- Monthly insights ("fatigue 12x, brain fog 8x") — TODO, окрема ітерація на Progress screen.
+- Базис: Atta IMG_6041-6046.
+
+**P1.4 — Edit Past Period (calendar picker)** ✅ (30.04.2026):
+- В Progress screen header кнопка "✏️ Edit period / Редагувати" → bottom-sheet modal зі списком минулих дат + date picker для додавання + Remove на кожному записі. ✅
+- Зберігається в `profile.vive_periods` (array, sorted desc — newest first). Helper `getPeriods(profile)` мерджить + sort, `getLatestPeriodDate(profile)` повертає найсвіжішу. ✅
+- `calcCycleDay` бере найсвіжіший запис з масиву через `getLatestPeriodDate`. `getCalendarDays` приймає date string (як раніше) — caller передає `latestDate`. ✅
+- Backwards compat: якщо `vive_periods` порожній, fallback на `profile.lastPeriodDate`. При збереженні масиву `lastPeriodDate` теж оновлюється на newest для legacy кода. Audit `next()` синкає введену дату в обидва поля. ✅
+- EN+UK ✅. Дозволяє точніший phase prediction для жінок з нерегулярним циклом.
+- Базис: Atta IMG_6047.
+
+**P1.5 — Pain & Energy Charts** ✅ (30.04.2026):
+- Два SVG-графіки в Progress screen під календарем циклу. Без сторонніх бібліотек. ✅
+- `PainChart`: bar chart за 30 днів — кожен стовпчик = кількість pain-симптомів у check-in (gut_cramps, gut_pain, body_headache, body_back_pain, body_joint_ache, body_breast_tender, body_muscle_sore). Колір = фаза циклу для того дня (через `getPhaseForDate`). Менструальні дні — насичено, інші — opacity 0.6. Empty-state коли немає записів. ✅
+- `EnergyByPhaseChart`: 4 стовпчики (menstr/follic/ovul/luteal) — середнє значення `energy` слайдера (1–10) у check-in, згруповане за фазою циклу. Показує `n=` записів на фазу + значення у %. ✅
+- Helpers: `getPhaseForDate(profile, dateStr)`, `calcPainSeries(history, profile, days)`, `calcEnergyByPhase(history, profile)`, `PAIN_SYMPTOM_IDS`. ✅
+- EN+UK ✅.
+- Базис: Atta IMG_6053-6055.
+
+**P1.6 — Personal Info блок у Profile** ✅ (01.05.2026):
+- `PERSONAL_INFO_OPTIONS` — 3 групи: dietary (7 chips: none/vegan/veg/keto/paleo/gluten-free/dairy-free), activity (sedentary/moderate/active/very_active), limitations (9 multi-select chips: heart/knee/back/joint/diabetes/thyroid/raynauds/pregnant/breastfeeding) + 2 free-text поля (allergies, dislikes). EN+UK ✅.
+- Зберігається в `profile.personalInfo` через новий `setProfile` prop у ProfileScreen. Collapsible card з summary-рядком + Save button з "✓ Збережено" feedback. ✅
+- `getPersonalInfoAdjustments(profile)` — повертає `{exclude, boost}`: heart/raynauds/pregnant → exclude sauna+coldPlunge; pregnant/breastfeeding/diabetes/thyroid → exclude fasting; knee/joint/back → -1 strength; sedentary → +1 strength; very_active → +1 sleep; vegan/vegetarian → +1 creatine. ✅
+- `generateBiohackerRecs` застосовує `boost` (delta до score) і `exclude` (-999 → відсіюється). ✅
+- Skip Products integration — наразі не критична (SKIP_PRODUCTS не містить food/allergen-based items). Залишено на майбутнє якщо з'являться продукти-кандидати.
+- Базис: Atta IMG_6058.
+
+**P1.7 — Phase change + Period prediction notifications** ✅ (01.05.2026):
+- Helpers у `alex-app.jsx`: `showLocalPush` (generic push через `registration.showNotification`), `predictNextPeriodDate(profile)` (latest period + cycleLength), `daysBetween(a,b)`. ✅
+- `PHASE_NOTIF_COPY` — 4 фази × EN+UK з biohacker-tone (e.g. "🍂 Лютеальна фаза — Магній 300мг + менш інтенсивні тренування + раніше спати"). Без inner-autumn fluff. ✅
+- DashboardScreen: 2 нові useEffect:
+  - Phase change: спрацьовує коли `phaseKey !== lsGet("vive_last_phase_notified")`. Маркує flag після відправки.
+  - Period prediction: при кожному вході в dashboard, якщо `daysUntil ∈ [0,2]` і `vive_period_predicted_<date>_sent !== true` — шле push з конкретним числом днів. ✅
+- Profile screen: 2 нові toggles "Зміна фази циклу" / "Прогноз менструації" нижче milestone Email-toggle, у тій же Notifications card. Disabled якщо master push-toggle off (з пояснювальним рядком). ✅
+- `public/sw.js` — bump до v2, додано generic `SHOW_NOTIFICATION` message handler (поруч з legacy `SHOW_MILESTONE`). ✅
+- `api/notify.ts` — додано `type` поле + 2 нові гілки в `buildHtml` (phase_change, period_prediction) з shared `wrapEmail` helper. Validation per-type. Ready для cloud-trigger у майбутньому, поки клієнт використовує лише local push. ✅
+- EN+UK для всіх повідомлень ✅. Build 305KB → 100.90KB gzip.
+- Базис: Atta IMG_6059.
+
+**Що НЕ беремо з Atta (НЕ наш бренд):**
+- "Mantra for today" — wellness-fluff
+- "Inner autumn/spring" framing — поетично, не biohacker
+- Pregnancy/Ovulation tests — fertility focus
+- Sex & pleasure категорія — занадто інтимне для 35+ longevity
+- €8.99/міс pricing — наше $19 правильне
+- Бежевий design — наша glassmorphism краща
+
+---
+
+### 🟢 P2 — Claude API чат + Skin Longevity tooltips (після P1)
+
+#### P2.1 Claude API integration (Chat → real AI)
 **Зараз:** Chat працює на `QA_PAIRS` — статичний словник питання-відповідь.
 **Потрібно:** підключити Claude API через Vercel API Routes.
 
 ```
-File: api/chat.js (новий)
-- Отримати profile + cycle phase + message history
-- Викликати Claude з system prompt про Alex
-- Повернути streamed response
+File: api/chat.ts (новий)
+- Endpoint: POST /api/chat
+- Отримати profile + cycle phase + message history + biohacker stack + symptom log (P1.3)
+- Викликати Claude (sonnet-4-6) з system prompt про Alex
+  System prompt: "Ти Алекс — longevity-тренерка для жінок 35+.
+                  Стиль — наукова подружка-біохакер. Жодних діагнозів."
+- Prompt caching: профіль + останні 30 check-ins + biohacker stack у cached prefix
+  → економія 90% токенів на recurring requests.
+- Streaming response (SSE).
+- Fallback на QA_PAIRS якщо API падає.
+- ENV: ANTHROPIC_API_KEY (Vercel secret).
 ```
+
+#### P2.2 Skin Longevity tooltips
+- Кожен крок Skin Longevity Protocol отримує "Why" tooltip
+  ("ретинол → +колаген, який падає 1.5%/рік після 35").
+- Tap-to-show на mobile, hover на desktop.
+
+### Інше (старе — приберу/оновлю після P1+P2)
 
 #### 2. Stripe payment (paywall → real payments)
 **Зараз:** Paywall — UI mockup, "Continue Free" просто пропускає на report.

@@ -1,7 +1,8 @@
-// Alex — service worker for PWA milestone notifications
-// Scope: served from /sw.js, controls origin root
+// Alex — service worker for PWA notifications.
+// Triggers: milestone streaks (P0.4), phase change + period prediction (P1.7).
+// Scope: served from /sw.js, controls origin root.
 
-const SW_VERSION = "alex-sw-v1"
+const SW_VERSION = "alex-sw-v2"
 
 self.addEventListener("install", (event) => {
   self.skipWaiting()
@@ -35,15 +36,16 @@ self.addEventListener("push", (event) => {
 })
 
 // Receive trigger from app code: navigator.serviceWorker.controller.postMessage({...})
-// Used for client-side milestone detection without push server.
+// Used for client-side detection (milestone, phase change, period prediction).
+// Accepts SHOW_MILESTONE (legacy) and generic SHOW_NOTIFICATION.
 self.addEventListener("message", (event) => {
   const msg = event.data || {}
-  if (msg.type !== "SHOW_MILESTONE") return
+  if (msg.type !== "SHOW_MILESTONE" && msg.type !== "SHOW_NOTIFICATION") return
 
   const title = msg.title || "🌟 Alex"
-  const body  = msg.body  || "Milestone unlocked"
+  const body  = msg.body  || ""
   const url   = msg.url   || "/"
-  const tag   = msg.tag   || "alex-milestone"
+  const tag   = msg.tag   || (msg.type === "SHOW_MILESTONE" ? "alex-milestone" : "alex-notif")
 
   self.registration.showNotification(title, {
     body,

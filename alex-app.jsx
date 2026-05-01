@@ -137,9 +137,77 @@ async function sendMilestoneEmail({ email, name, milestone, lang, insights }) {
   }
 }
 
+// P1.7 — generic local push (phase change / period prediction).
+async function showLocalPush({ title, body, tag, url = "/" }) {
+  if (!("serviceWorker" in navigator)) return false
+  if (!("Notification" in window) || Notification.permission !== "granted") return false
+  try {
+    const reg = await navigator.serviceWorker.ready
+    await reg.showNotification(title, {
+      body,
+      tag,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url },
+    })
+    return true
+  } catch { return false }
+}
+
+// P1.7 — phase change copy (biohacker, no inner-autumn fluff).
+const PHASE_NOTIF_COPY = {
+  menstrual:  {
+    uk: { title: "🌹 Перший день циклу", body: "Залізо + теплі рідини + повільне відновлення. Силові — пропусти у важкі дні." },
+    en: { title: "🌹 Day 1 of your cycle",  body: "Iron + warm fluids + slow recovery. Skip strength on heavy bleed days." },
+  },
+  follicular: {
+    uk: { title: "🌱 Фолікулярна фаза", body: "Енергія росте — час планувати, важкі силові, нові виклики." },
+    en: { title: "🌱 Follicular phase",  body: "Energy rising — time to plan, lift heavy, take on new challenges." },
+  },
+  ovulation:  {
+    uk: { title: "✨ Овуляція", body: "Пік енергії і впевненості. Найважчі тренування + соціальні марафони." },
+    en: { title: "✨ Ovulation",  body: "Peak energy and confidence. Heaviest lifts + social marathons." },
+  },
+  luteal:     {
+    uk: { title: "🍂 Лютеальна фаза", body: "Магній 300мг + менш інтенсивні тренування + раніше спати." },
+    en: { title: "🍂 Luteal phase",     body: "Magnesium 300mg + lighter training + earlier bedtime." },
+  },
+}
+
+// P1.7 — predicts the next period start. Adds cycleLength to latest period.
+function predictNextPeriodDate(profile) {
+  const latest = getLatestPeriodDate(profile)
+  if (!latest) return ""
+  const cl = parseInt(profile?.cycleLength) || 28
+  const start = new Date(latest + "T12:00:00Z")
+  start.setUTCDate(start.getUTCDate() + cl)
+  return start.toISOString().slice(0, 10)
+}
+
+function daysBetween(fromYmd, toYmd) {
+  if (!fromYmd || !toYmd) return null
+  const a = new Date(fromYmd + "T12:00:00Z").getTime()
+  const b = new Date(toYmd   + "T12:00:00Z").getTime()
+  return Math.round((b - a) / 86400000)
+}
+
+// P1.4 — periods array helpers. Source of truth is profile.vive_periods (array of YYYY-MM-DD).
+// Falls back to profile.lastPeriodDate for backwards compat with profiles created before P1.4.
+function getPeriods(profile) {
+  const arr = Array.isArray(profile?.vive_periods) ? profile.vive_periods.filter(Boolean) : []
+  if (arr.length === 0 && profile?.lastPeriodDate) return [profile.lastPeriodDate]
+  return [...arr].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+}
+
+function getLatestPeriodDate(profile) {
+  const list = getPeriods(profile)
+  return list[0] || ""
+}
+
 function calcCycleDay(profile) {
-  if (profile.lastPeriodDate) {
-    const start = new Date(profile.lastPeriodDate + "T12:00:00Z")
+  const latest = getLatestPeriodDate(profile)
+  if (latest) {
+    const start = new Date(latest + "T12:00:00Z")
     const diff = Math.floor((Date.now() - start.getTime()) / 86400000) + 1
     const cl = parseInt(profile.cycleLength) || 28
     return ((diff - 1) % cl) + 1
@@ -161,6 +229,61 @@ function getCalendarDays(lastPeriodDate, cycleLength) {
 
 function toggle(arr, id) {
   return arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id]
+}
+
+// P1.5 — pain symptoms tracked in daily check-in (subset of SYMPTOMS_LOG bodies + cramps).
+const PAIN_SYMPTOM_IDS = ["gut_cramps", "gut_pain", "body_headache", "body_back_pain", "body_joint_ache", "body_breast_tender", "body_muscle_sore"]
+
+// P1.5 — compute cycle phase for any historical date by finding the most recent period start <= that date.
+function getPhaseForDate(profile, dateStr) {
+  if (!dateStr) return null
+  const periods = getPeriods(profile)
+  if (!periods.length) return null
+  const cl = parseInt(profile?.cycleLength) || 28
+  const target = dateStr.slice(0, 10)
+  const start = periods.find(p => p <= target)
+  if (!start) return null
+  const diff = Math.floor((new Date(target + "T12:00:00Z").getTime() - new Date(start + "T12:00:00Z").getTime()) / 86400000) + 1
+  if (diff < 1) return null
+  return getPhase(((diff - 1) % cl) + 1, cl)
+}
+
+// P1.5 — pain marker count per day across last `days`. Uses max per day if multiple check-ins.
+function calcPainSeries(history, profile, days = 30) {
+  const map = {}
+  for (const h of history || []) {
+    const d = h?.date?.slice(0, 10)
+    if (!d) continue
+    const n = (h.symptoms || []).filter(s => PAIN_SYMPTOM_IDS.includes(s)).length
+    if (n > (map[d] || 0)) map[d] = n
+  }
+  const today = new Date(todayStr() + "T12:00:00Z")
+  const out = []
+  for (let i = days - 1; i >= 0; i--) {
+    const dt = new Date(today)
+    dt.setUTCDate(today.getUTCDate() - i)
+    const ds = dt.toISOString().slice(0, 10)
+    out.push({ date: ds, pain: map[ds] || 0, phase: getPhaseForDate(profile, ds) })
+  }
+  return out
+}
+
+// P1.5 — average energy slider value per phase across all check-ins.
+function calcEnergyByPhase(history, profile) {
+  const acc = { menstrual: [0, 0], follicular: [0, 0], ovulation: [0, 0], luteal: [0, 0] }
+  for (const h of history || []) {
+    const e = parseFloat(h?.energy)
+    if (!Number.isFinite(e)) continue
+    const ph = getPhaseForDate(profile, h?.date)
+    if (!ph || !acc[ph]) continue
+    acc[ph][0] += e
+    acc[ph][1] += 1
+  }
+  return ["menstrual", "follicular", "ovulation", "luteal"].map(p => ({
+    phase: p,
+    avg: acc[p][1] ? acc[p][0] / acc[p][1] : 0,
+    n: acc[p][1],
+  }))
 }
 
 // ─── ROOT CAUSE DATA ──────────────────────────────────────────────────────────
@@ -349,7 +472,7 @@ function isHormoneShiftDetected(profile) {
   return getHormoneShiftScore(profile) >= 8
 }
 
-function getRootCauses(profile) {
+function getRootCauses(profile, history = []) {
   const skin = profile.skinSymptoms || []
   const hair = profile.hairSymptoms || []
   const body = profile.bodySymptoms || []
@@ -397,6 +520,21 @@ function getRootCauses(profile) {
   if (skin.includes("acne"))      s.inflammation += 1
   if (body.includes("bloating"))  s.inflammation += 2
   if (body.includes("brainfog"))  s.inflammation += 1
+
+  // Cycle disrupters from last 7 check-ins (P1.2). Counts ≥2 appearances as a real pattern.
+  const recent = (history || []).slice(-7)
+  const dCount = {}
+  recent.forEach(h => (h.disrupters || []).forEach(d => { dCount[d] = (dCount[d] || 0) + 1 }))
+  const hasD = k => (dCount[k] || 0) >= 2
+
+  if (hasD("jet_lag") && hasD("late_nights")) s.cortisol += 1
+  if (hasD("jet_lag"))     s.cortisol += 1
+  if (hasD("late_nights")) s.cortisol += 1
+  if (hasD("stress"))      s.cortisol += 1
+  if (hasD("travel"))      s.cortisol += 1
+  if (hasD("trauma"))      s.cortisol += 1
+  if (hasD("alcohol"))     s.inflammation += 1
+  if (hasD("sickness"))    s.inflammation += 1
 
   return Object.entries(s)
     .map(([key, score]) => ({ key, score }))
@@ -694,6 +832,15 @@ function generateBiohackerRecs(profile) {
   if (hormoneShift)                       score.hrtPrep += 3
   if (age >= 40)                          score.hrtPrep += 2
   if (age >= 45)                          score.hrtPrep += 1
+
+  // P1.6 — apply personal info adjustments (limitations + activity + diet)
+  const { exclude, boost } = getPersonalInfoAdjustments(profile)
+  for (const [key, delta] of Object.entries(boost)) {
+    if (key in score) score[key] += delta
+  }
+  for (const key of exclude) {
+    score[key] = -999 // hard-exclude
+  }
 
   return Object.entries(score)
     .map(([key, s]) => ({ key, score: s }))
@@ -1198,6 +1345,173 @@ const OPTIONS = {
   ],
 }
 
+// ─── PERSONAL INFO (P1.6) ─────────────────────────────────────────────────────
+// Stored in profile.personalInfo. Feeds into generateBiohackerRecs to filter
+// unsafe protocols (e.g. cardiac → no sauna, diabetes → no fasting).
+const PERSONAL_INFO_OPTIONS = {
+  dietary: [
+    { id: "none",       en: "No restrictions", uk: "Без обмежень" },
+    { id: "vegan",      en: "🌱 Vegan",        uk: "🌱 Веганка" },
+    { id: "vegetarian", en: "🥗 Vegetarian",   uk: "🥗 Вегетаріанка" },
+    { id: "keto",       en: "🥑 Keto",         uk: "🥑 Кето" },
+    { id: "paleo",      en: "🥩 Paleo",        uk: "🥩 Палео" },
+    { id: "gluten_free",en: "🌾 Gluten-free",  uk: "🌾 Без глютену" },
+    { id: "dairy_free", en: "🥛 Dairy-free",   uk: "🥛 Без молочного" },
+  ],
+  activity: [
+    { id: "sedentary",  en: "Sedentary — desk + minimal walking", uk: "Малорухливий — офіс + мінімум кроків" },
+    { id: "moderate",   en: "Moderate — 2-3 workouts/week",       uk: "Помірний — 2-3 тренування/тиж" },
+    { id: "active",     en: "Active — 4-5 workouts/week",          uk: "Активний — 4-5 тренувань/тиж" },
+    { id: "very_active",en: "Very active — 6+ workouts/week",      uk: "Дуже активний — 6+ тренувань/тиж" },
+  ],
+  // Multi-select limitations that influence recommendations.
+  limitations: [
+    { id: "heart",      en: "❤️ Cardiac issues",      uk: "❤️ Серцеві проблеми" },
+    { id: "knee",       en: "🦵 Knee problems",        uk: "🦵 Проблеми з колінами" },
+    { id: "back",       en: "🪑 Back pain",            uk: "🪑 Біль у спині" },
+    { id: "joint",      en: "🦴 Joint disease",        uk: "🦴 Хвороби суглобів" },
+    { id: "diabetes",   en: "🩸 Diabetes / pre-diab.", uk: "🩸 Діабет / переддіабет" },
+    { id: "thyroid",    en: "🦋 Thyroid condition",    uk: "🦋 Щитоподібна залоза" },
+    { id: "raynauds",   en: "🧊 Raynaud's",            uk: "🧊 Хвороба Рейно" },
+    { id: "pregnant",   en: "🤰 Pregnant",             uk: "🤰 Вагітна" },
+    { id: "breastfeeding", en: "🤱 Breastfeeding",     uk: "🤱 Годую груддю" },
+  ],
+}
+
+// Personal info → biohacker filter. Returns set of stack keys to suppress
+// and a multiplier map to dial recs up/down.
+function getPersonalInfoAdjustments(profile) {
+  const info = profile.personalInfo || {}
+  const lim = info.limitations || []
+  const exclude = new Set()
+  const boost = {}
+
+  if (lim.includes("heart")) {
+    exclude.add("sauna")
+    exclude.add("coldPlunge")
+  }
+  if (lim.includes("raynauds")) exclude.add("coldPlunge")
+  if (lim.includes("pregnant")) {
+    exclude.add("sauna")
+    exclude.add("coldPlunge")
+    exclude.add("fasting")
+  }
+  if (lim.includes("breastfeeding")) exclude.add("fasting")
+  if (lim.includes("diabetes"))      exclude.add("fasting")
+  if (lim.includes("thyroid"))       exclude.add("fasting")
+  if (lim.includes("knee") || lim.includes("joint") || lim.includes("back")) {
+    boost.strength = -1 // still useful but de-prioritise heavy lifts
+  }
+
+  // Activity level: sedentary → boost strength; very_active → recovery-focused
+  if (info.activity === "sedentary")   boost.strength = (boost.strength || 0) + 1
+  if (info.activity === "very_active") boost.sleep    = (boost.sleep    || 0) + 1
+
+  // Vegan/vegetarian → creatine even more useful (low dietary intake)
+  if (info.dietary === "vegan" || info.dietary === "vegetarian") {
+    boost.creatine = (boost.creatine || 0) + 1
+  }
+
+  return { exclude, boost }
+}
+
+// ─── CYCLE DISRUPTERS (P1.2) ──────────────────────────────────────────────────
+// Multi-select chips in daily check-in. Saved to vive_history[i].disrupters.
+// Used by getRootCauses to nudge cortisol/inflammation when patterns recur.
+const DISRUPTERS = [
+  { id: "travel",      en: "✈️ Travel",        uk: "✈️ Подорож" },
+  { id: "stress",      en: "😣 Stress",        uk: "😣 Стрес" },
+  { id: "trauma",      en: "💔 Trauma",        uk: "💔 Травма" },
+  { id: "late_nights", en: "🌙 Late nights",   uk: "🌙 Пізні ночі" },
+  { id: "jet_lag",     en: "🕓 Jet lag",       uk: "🕓 Джетлаг" },
+  { id: "medication",  en: "💊 Medication",    uk: "💊 Ліки" },
+  { id: "alcohol",     en: "🍷 Alcohol",       uk: "🍷 Алкоголь" },
+  { id: "sickness",    en: "🤒 Sickness",      uk: "🤒 Хвороба" },
+]
+
+// ─── DAILY SYMPTOM LOG (P1.3) ─────────────────────────────────────────────────
+// 5 categories × 8-12 chips. Saved to vive_history[i].symptoms (array of ids,
+// plus any free-text from customSymptom appended as "custom:<text>").
+// Atta-inspired but NO fertility/sex/test categories — biohacker longevity frame.
+const SYMPTOMS_LOG = [
+  {
+    key: "mood", en: "Mood", uk: "Настрій",
+    items: [
+      { id: "mood_anxious",     en: "😰 Anxious",     uk: "😰 Тривога" },
+      { id: "mood_irritable",   en: "😤 Irritable",   uk: "😤 Дратівлива" },
+      { id: "mood_calm",        en: "😌 Calm",        uk: "😌 Спокій" },
+      { id: "mood_happy",       en: "😊 Happy",       uk: "😊 Щаслива" },
+      { id: "mood_low",         en: "🌧 Low mood",    uk: "🌧 Пригнічена" },
+      { id: "mood_overwhelmed", en: "🌀 Overwhelmed", uk: "🌀 Перевантажена" },
+      { id: "mood_focused",     en: "🎯 Focused",     uk: "🎯 Сфокусована" },
+      { id: "mood_brainfog",    en: "🌫 Brain fog",   uk: "🌫 Туман у голові" },
+      { id: "mood_motivated",   en: "🔥 Motivated",   uk: "🔥 Мотивована" },
+      { id: "mood_tearful",     en: "😢 Tearful",     uk: "😢 На сльозу" },
+    ],
+  },
+  {
+    key: "sleep", en: "Sleep", uk: "Сон",
+    items: [
+      { id: "sleep_deep",         en: "💤 Deep sleep",          uk: "💤 Глибокий сон" },
+      { id: "sleep_restless",     en: "🌪 Restless",            uk: "🌪 Неспокійний" },
+      { id: "sleep_woke_night",   en: "🌙 Woke at night",       uk: "🌙 Прокидалась вночі" },
+      { id: "sleep_hard_falling", en: "⏰ Hard to fall asleep", uk: "⏰ Важко заснути" },
+      { id: "sleep_early_wake",   en: "☀️ Woke too early",      uk: "☀️ Прокинулась рано" },
+      { id: "sleep_night_sweats", en: "💦 Night sweats",        uk: "💦 Нічна пітливість" },
+      { id: "sleep_vivid_dreams", en: "🎬 Vivid dreams",        uk: "🎬 Яскраві сни" },
+      { id: "sleep_tired_wake",   en: "😴 Tired on wake",       uk: "😴 Втомлена з ранку" },
+      { id: "sleep_refreshed",    en: "🌞 Refreshed",           uk: "🌞 Свіжа" },
+      { id: "sleep_insomnia",     en: "😵 Insomnia",            uk: "😵 Безсоння" },
+    ],
+  },
+  {
+    key: "gut", en: "Gut", uk: "Травлення",
+    items: [
+      { id: "gut_bloated",      en: "🎈 Bloated",       uk: "🎈 Здуття" },
+      { id: "gut_smooth",       en: "✅ Smooth",        uk: "✅ Без проблем" },
+      { id: "gut_constipated",  en: "🚫 Constipated",   uk: "🚫 Запор" },
+      { id: "gut_loose",        en: "💧 Loose stool",   uk: "💧 Рідкий стілець" },
+      { id: "gut_cramps",       en: "🔥 Cramps",        uk: "🔥 Спазми" },
+      { id: "gut_nausea",       en: "🤢 Nausea",        uk: "🤢 Нудота" },
+      { id: "gut_reflux",       en: "🌶 Reflux",        uk: "🌶 Печія" },
+      { id: "gut_gas",          en: "💨 Gas",           uk: "💨 Гази" },
+      { id: "gut_pain",         en: "😖 Stomach pain",  uk: "😖 Біль у животі" },
+      { id: "gut_appetite_low", en: "🥄 Low appetite",  uk: "🥄 Низький апетит" },
+    ],
+  },
+  {
+    key: "cravings", en: "Cravings", uk: "Тяга до їжі",
+    items: [
+      { id: "crave_sweet",     en: "🍫 Sweet",       uk: "🍫 Солодке" },
+      { id: "crave_salty",     en: "🥨 Salty",       uk: "🥨 Солоне" },
+      { id: "crave_carbs",     en: "🍞 Carbs",       uk: "🍞 Вуглеводи" },
+      { id: "crave_caffeine",  en: "☕ Caffeine",    uk: "☕ Кофеїн" },
+      { id: "crave_alcohol",   en: "🍷 Alcohol",     uk: "🍷 Алкоголь" },
+      { id: "crave_chocolate", en: "🍬 Chocolate",   uk: "🍬 Шоколад" },
+      { id: "crave_fried",     en: "🍟 Fried food",  uk: "🍟 Смажене" },
+      { id: "crave_dairy",     en: "🧀 Dairy",       uk: "🧀 Молочне" },
+      { id: "crave_protein",   en: "🥩 Protein",     uk: "🥩 Білок" },
+      { id: "crave_none",      en: "🌿 No cravings", uk: "🌿 Без тяги" },
+    ],
+  },
+  {
+    key: "body", en: "Body symptoms", uk: "Тіло",
+    items: [
+      { id: "body_headache",      en: "🤕 Headache",          uk: "🤕 Головний біль" },
+      { id: "body_back_pain",     en: "🪑 Back pain",         uk: "🪑 Біль у спині" },
+      { id: "body_joint_ache",    en: "🦴 Joint ache",        uk: "🦴 Біль у суглобах" },
+      { id: "body_muscle_sore",   en: "💪 Muscle sore",       uk: "💪 Болять м'язи" },
+      { id: "body_breast_tender", en: "💗 Breast tenderness", uk: "💗 Чутливі груди" },
+      { id: "body_acne",          en: "🔴 Acne flare",        uk: "🔴 Висипи" },
+      { id: "body_dry_skin",      en: "🏜 Dry skin",          uk: "🏜 Суха шкіра" },
+      { id: "body_fatigue",       en: "🪫 Fatigue",           uk: "🪫 Втома" },
+      { id: "body_hot_flush",     en: "🔥 Hot flush",         uk: "🔥 Приплив" },
+      { id: "body_dizzy",         en: "🌀 Dizziness",         uk: "🌀 Запаморочення" },
+      { id: "body_cold_extr",     en: "🧊 Cold hands/feet",   uk: "🧊 Холодні руки/ноги" },
+    ],
+  },
+]
+
 const STEP_META = {
   en: {
     skin:      { title: "Skin",                  sub: "Noticed any of these in the past 3 months?" },
@@ -1247,7 +1561,20 @@ function BodyAudit({ profile, setProfile, onDone, lang }) {
 
   function next() {
     if (step < AUDIT_STEPS.length - 1) { setStep(s => s + 1) }
-    else { setProfile(p => ({ ...p, ...d })); onDone() }
+    else {
+      setProfile(p => {
+        const merged = { ...p, ...d }
+        // P1.4 — sync lastPeriodDate into vive_periods so Edit Period sees it
+        if (merged.lastPeriodDate) {
+          const existing = Array.isArray(p.vive_periods) ? p.vive_periods : []
+          if (!existing.includes(merged.lastPeriodDate)) {
+            merged.vive_periods = [...existing, merged.lastPeriodDate]
+          }
+        }
+        return merged
+      })
+      onDone()
+    }
   }
 
   const canNext = {
@@ -1478,9 +1805,9 @@ function BodyAudit({ profile, setProfile, onDone, lang }) {
 }
 
 // ─── SCREEN 3: PAYWALL ────────────────────────────────────────────────────────
-function PaywallScreen({ profile, onContinueFree, onBack, lang }) {
+function PaywallScreen({ profile, history, onContinueFree, onBack, lang }) {
   const uk     = lang === "uk"
-  const causes = getRootCauses(profile)
+  const causes = getRootCauses(profile, history)
 
   return (
     <div style={{ ...S.screen, display: "flex", flexDirection: "column" }}>
@@ -1564,10 +1891,10 @@ const PHASE_NAMES = {
   luteal:     { en: "Luteal",     uk: "Лютеальна",    emoji: "🍂" },
 }
 
-function ReportScreen({ profile, onDone, onChat, lang }) {
+function ReportScreen({ profile, history, onDone, onChat, lang }) {
   const uk           = lang === "uk"
   const L            = uk ? "uk" : "en"
-  const causes       = getRootCauses(profile)
+  const causes       = getRootCauses(profile, history)
   const phaseKey     = getPhase(parseInt(profile.cycleDay) || 14, parseInt(profile.cycleLength) || 28)
   const beauty       = generateBeautyRoutine(profile, uk)
   const protocol     = getDefaultProtocol(uk)
@@ -2019,6 +2346,50 @@ function DashboardScreen({ profile, history, onCheckIn, onChat, onProgress, onPr
       if (sent) lsSet(sentKey, true)
     })()
   }, [milestoneStreak])
+
+  // P1.7 — Phase change push (fires when current phase differs from last seen).
+  useEffect(() => {
+    if (!phaseKey) return
+    const pushOn = lsGet("vive_notify_push", false)
+    const phaseOn = lsGet("vive_notify_phase_change", false)
+    if (!pushOn || !phaseOn) return
+    const last = lsGet("vive_last_phase_notified", "")
+    if (last === phaseKey) return
+    const copy = PHASE_NOTIF_COPY[phaseKey]
+    if (!copy) return
+    const c = uk ? copy.uk : copy.en
+    ;(async () => {
+      const ok = await showLocalPush({
+        title: c.title, body: c.body, tag: "alex-phase-" + phaseKey,
+      })
+      if (ok) lsSet("vive_last_phase_notified", phaseKey)
+    })()
+  }, [phaseKey, uk])
+
+  // P1.7 — Period prediction push (fires when ≤2 days from predicted next period).
+  const predictedNextPeriod = predictNextPeriodDate(profile)
+  useEffect(() => {
+    const pushOn = lsGet("vive_notify_push", false)
+    const periodOn = lsGet("vive_notify_period_prediction", false)
+    if (!pushOn || !periodOn) return
+    const next = predictedNextPeriod
+    if (!next) return
+    const daysUntil = daysBetween(todayStr(), next)
+    if (daysUntil === null || daysUntil < 0 || daysUntil > 2) return
+    const sentKey = "vive_period_predicted_" + next + "_sent"
+    if (lsGet(sentKey, false)) return
+    const title = daysUntil === 0
+      ? (uk ? "🌹 Менструація вже сьогодні" : "🌹 Period expected today")
+      : (uk ? `🌹 Менструація через ${daysUntil} ${daysUntil === 1 ? "день" : "дні"}`
+            : `🌹 Period in ${daysUntil} ${daysUntil === 1 ? "day" : "days"}`)
+    const body = uk
+      ? `Очікуй ${next}. Підготуй залізо, магній, теплу їжу — і впусти повільніший темп.`
+      : `Expected ${next}. Prep iron, magnesium, warm food — and ease the pace.`
+    ;(async () => {
+      const ok = await showLocalPush({ title, body, tag: "alex-period-" + next })
+      if (ok) lsSet(sentKey, true)
+    })()
+  }, [predictedNextPeriod, uk])
 
   const [done, setDone] = useState(() => {
     const saved = lsGet("vive_tasks_done", { date: "", done: [] })
@@ -2488,13 +2859,16 @@ function CustomSlider({ min, max, value, onChange }) {
 // ─── SCREEN 7: CHECK-IN ───────────────────────────────────────────────────────
 function CheckInScreen({ history, setHistory, lang, onBack }) {
   const uk = lang === "uk"
-  const [vals, setVals] = useState({ energy: 5, sleep: 7, mood: 5, recovery: 7, move: null, proteinHit: null, strengthDone: null })
+  const [vals, setVals] = useState({ energy: 5, sleep: 7, mood: 5, recovery: 7, move: null, proteinHit: null, strengthDone: null, disrupters: [], symptoms: [] })
+  const [customSymptom, setCustomSymptom] = useState("")
   const [saved, setSaved] = useState(false)
 
   const doneToday = history.some(h => h.date?.startsWith(todayStr()))
 
   function submit() {
-    const entry = { ...vals, date: new Date().toISOString() }
+    const custom = customSymptom.trim()
+    const symptoms = custom ? [...vals.symptoms, `custom:${custom}`] : vals.symptoms
+    const entry = { ...vals, symptoms, date: new Date().toISOString() }
     const newHistory = [...history, entry]
     setHistory(newHistory)
     lsSet("vive_history", newHistory)
@@ -2586,6 +2960,60 @@ function CheckInScreen({ history, setHistory, lang, onBack }) {
             <Chip active={vals.strengthDone === false} onClick={() => setVals(v => ({ ...v, strengthDone: false }))} style={{ flex: 1, textAlign: "center" }}>✗ {uk ? "Ні" : "No"}</Chip>
           </div>
         </div>
+
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{uk ? "Що збивало цикл сьогодні?" : "What disrupted your cycle today?"}</div>
+          <div style={{ fontSize: 12, color: "#6B7A8D", marginBottom: 12 }}>{uk ? "Вибери все, що було. Можна нічого." : "Pick all that apply. None is fine."}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {DISRUPTERS.map(d => (
+              <Chip key={d.id}
+                    active={vals.disrupters.includes(d.id)}
+                    onClick={() => setVals(v => ({ ...v, disrupters: toggle(v.disrupters, d.id) }))}>
+                {uk ? d.uk : d.en}
+              </Chip>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{uk ? "Симптоми сьогодні" : "Today's symptoms"}</div>
+          <div style={{ fontSize: 12, color: "#6B7A8D", marginBottom: 16 }}>{uk ? "Поміть усе, що відчувала. Через місяць побачимо патерни." : "Tap anything you felt. We'll spot patterns over the month."}</div>
+          {SYMPTOMS_LOG.map(cat => (
+            <div key={cat.key} style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#1A2433", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                {uk ? cat.uk : cat.en}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {cat.items.map(s => (
+                  <Chip key={s.id}
+                        active={vals.symptoms.includes(s.id)}
+                        onClick={() => setVals(v => ({ ...v, symptoms: toggle(v.symptoms, s.id) }))}>
+                    {uk ? s.uk : s.en}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={{ marginTop: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#1A2433", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              {uk ? "Інше" : "Other"}
+            </div>
+            <input
+              type="text"
+              value={customSymptom}
+              onChange={e => setCustomSymptom(e.target.value)}
+              placeholder={uk ? "Свій симптом (напр. нічна тривога)" : "Your own symptom (e.g. night-time anxiety)"}
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "12px 14px", borderRadius: 12,
+                border: "1.5px solid rgba(107,122,141,0.18)",
+                background: "rgba(255,255,255,0.6)",
+                fontSize: 14, fontFamily: "inherit", color: "#1A2433",
+                outline: "none",
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       <div style={{ position: "sticky", bottom: 0, zIndex: 2, padding: "16px 24px 44px", background: "linear-gradient(0deg, #F5F9FF 65%, transparent)" }}>
@@ -2595,15 +3023,338 @@ function CheckInScreen({ history, setHistory, lang, onBack }) {
   )
 }
 
+// ─── HORMONE CURVES CHART (P1.1) ──────────────────────────────────────────────
+// Reference curves (Cleveland Clinic 2026 baselines for a typical 28-day cycle).
+// Values are normalised 0–1 (relative, not lab numbers) — visual education only.
+function HormoneCurvesChart({ cycleDay, cycleLength, uk }) {
+  const W = 320, H = 168
+  const padL = 24, padR = 16, padT = 22, padB = 24
+  const cw = W - padL - padR
+  const ch = H - padT - padB
+
+  const estrogen = d => {
+    const ov   = 0.85 * Math.exp(-Math.pow((d - 13) / 3.5, 2))
+    const lut  = 0.42 * Math.exp(-Math.pow((d - 21) / 4.5, 2))
+    return Math.min(1, Math.max(0.08, 0.14 + ov + lut * 0.55))
+  }
+  const progesterone = d => {
+    if (d <= 14) return 0.06 + (d / 14) * 0.04
+    const peak = 0.94 * Math.exp(-Math.pow((d - 21) / 4, 2))
+    return Math.min(1, Math.max(0.06, 0.06 + peak))
+  }
+  const testosterone = d => 0.42 + 0.22 * Math.exp(-Math.pow((d - 13) / 3.5, 2))
+
+  const xS = d => padL + ((d - 1) / Math.max(1, cycleLength - 1)) * cw
+  const yS = v => padT + (1 - v) * ch
+
+  const buildPath = fn => {
+    const pts = []
+    for (let d = 1; d <= cycleLength; d += 0.25) pts.push([xS(d), yS(fn(d))])
+    pts.push([xS(cycleLength), yS(fn(cycleLength))])
+    return pts.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")
+  }
+
+  const eVal = estrogen(cycleDay)
+  const pVal = progesterone(cycleDay)
+  const tVal = testosterone(cycleDay)
+  const xCur = xS(cycleDay)
+
+  const phase = getPhase(cycleDay, cycleLength)
+  const NARR = {
+    menstrual: {
+      en: "Estrogen + progesterone at floor — recovery window. Iron, warmth, low training load.",
+      uk: "Естроген і прогестерон на мінімумі — вікно відновлення. Залізо, тепло, легше навантаження.",
+    },
+    follicular: {
+      en: "Estrogen climbing → collagen synthesis up, pain tolerance higher. Prime time for strength and new actives.",
+      uk: "Естроген зростає → синтез колагену вище, поріг болю вищий. Найкраще вікно для силових і нових активів.",
+    },
+    ovulation: {
+      en: "Estrogen + testosterone peak — max strength and cognition. Sebum up, SPF non-negotiable.",
+      uk: "Пік естрогену й тестостерону — максимум сили й когніції. Себум вищий, SPF обов'язковий.",
+    },
+    luteal: {
+      en: "Progesterone dominates, then both crash → deeper sleep, cravings, reactive skin last 3 days.",
+      uk: "Прогестерон домінує, потім обидва падають → сон глибший, тяга до їжі, шкіра реактивна останні 3 дні.",
+    },
+  }
+  const narrative = NARR[phase] || NARR.follicular
+
+  const tipW = 116, tipH = 64
+  const tipX = (xCur + 8 + tipW > W - 4) ? Math.max(4, xCur - 8 - tipW) : xCur + 8
+  const tipY = padT + 4
+
+  const pct = v => Math.round(v * 100)
+
+  return (
+    <div style={{ ...S.card, padding: "16px 14px 14px", marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#1A2433", textTransform: "uppercase", letterSpacing: "0.7px" }}>
+          {uk ? "Криві гормонів" : "Hormone Curves"}
+        </div>
+        <div style={{ fontSize: 11, color: "#6B7A8D" }}>
+          {uk ? `День ${cycleDay} з ${cycleLength}` : `Day ${cycleDay} of ${cycleLength}`}
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }}>
+        {/* phase tint bands */}
+        <rect x={xS(1)}  y={padT} width={Math.max(1, xS(5)  - xS(1))}  height={ch} fill="#9B8FE8" opacity="0.07" />
+        <rect x={xS(13)} y={padT} width={Math.max(1, xS(15) - xS(13))} height={ch} fill="#4A9EDF" opacity="0.07" />
+
+        {/* x-axis ticks */}
+        {[1, 7, 14, 21, cycleLength].map(d => (
+          <g key={d}>
+            <line x1={xS(d)} y1={padT + ch} x2={xS(d)} y2={padT + ch + 3} stroke="#C7D0DC" strokeWidth="1" />
+            <text x={xS(d)} y={padT + ch + 14} fontSize="9" fill="#8B96A8" textAnchor="middle" fontFamily="inherit">{d}</text>
+          </g>
+        ))}
+
+        {/* curves */}
+        <path d={buildPath(testosterone)} fill="none" stroke="#4ECBA8" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={buildPath(progesterone)} fill="none" stroke="#4A9EDF" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={buildPath(estrogen)}     fill="none" stroke="#9B8FE8" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
+
+        {/* current-day vertical line + dots */}
+        <line x1={xCur} y1={padT} x2={xCur} y2={padT + ch} stroke="#1A2433" strokeWidth="1.2" strokeDasharray="3,3" opacity="0.45" />
+        <circle cx={xCur} cy={yS(eVal)} r="3.6" fill="#9B8FE8" stroke="#fff" strokeWidth="1.5" />
+        <circle cx={xCur} cy={yS(pVal)} r="3.6" fill="#4A9EDF" stroke="#fff" strokeWidth="1.5" />
+        <circle cx={xCur} cy={yS(tVal)} r="3.6" fill="#4ECBA8" stroke="#fff" strokeWidth="1.5" />
+
+        {/* tooltip */}
+        <g transform={`translate(${tipX}, ${tipY})`}>
+          <rect x="0" y="0" width={tipW} height={tipH} rx="9" fill="rgba(255,255,255,0.97)" stroke="rgba(74,158,223,0.22)" />
+          <text x="8" y="14" fontSize="9.5" fontWeight="800" fill="#1A2433" fontFamily="inherit" letterSpacing="0.3">
+            {uk ? `ДЕНЬ ${cycleDay}` : `DAY ${cycleDay}`}
+          </text>
+          <circle cx="11" cy="26" r="3" fill="#9B8FE8" />
+          <text x="19" y="29" fontSize="9.5" fill="#6B7A8D" fontFamily="inherit">
+            {uk ? "Естроген " : "Estrogen "}<tspan fill="#1A2433" fontWeight="700">{pct(eVal)}%</tspan>
+          </text>
+          <circle cx="11" cy="40" r="3" fill="#4A9EDF" />
+          <text x="19" y="43" fontSize="9.5" fill="#6B7A8D" fontFamily="inherit">
+            {uk ? "Прогестерон " : "Progesterone "}<tspan fill="#1A2433" fontWeight="700">{pct(pVal)}%</tspan>
+          </text>
+          <circle cx="11" cy="54" r="3" fill="#4ECBA8" />
+          <text x="19" y="57" fontSize="9.5" fill="#6B7A8D" fontFamily="inherit">
+            {uk ? "Тестостерон " : "Testosterone "}<tspan fill="#1A2433" fontWeight="700">{pct(tVal)}%</tspan>
+          </text>
+        </g>
+      </svg>
+
+      {/* legend */}
+      <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#6B7A8D", marginTop: 8, justifyContent: "center", flexWrap: "wrap" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ width: 14, height: 2.5, background: "#9B8FE8", borderRadius: 2 }} />
+          {uk ? "Естроген" : "Estrogen"}
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ width: 14, height: 2.5, background: "#4A9EDF", borderRadius: 2 }} />
+          {uk ? "Прогестерон" : "Progesterone"}
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ width: 14, height: 2.5, background: "#4ECBA8", borderRadius: 2 }} />
+          {uk ? "Тестостерон" : "Testosterone"}
+        </span>
+      </div>
+
+      {/* phase narrative */}
+      <div style={{ fontSize: 12.5, color: "#1A2433", lineHeight: 1.55, marginTop: 10, padding: "10px 12px", background: "rgba(74,158,223,0.07)", borderRadius: 12 }}>
+        {uk ? narrative.uk : narrative.en}
+      </div>
+
+      {/* footnote */}
+      <div style={{ fontSize: 10, color: "#8B96A8", marginTop: 8, lineHeight: 1.45 }}>
+        {uk
+          ? "Опорні криві (Cleveland Clinic 2026) — не лабораторні дані."
+          : "Reference curves (Cleveland Clinic 2026) — not lab values."}
+      </div>
+    </div>
+  )
+}
+
+// P1.5 — Pain over last 30 days. Bar height = count of pain symptoms logged that day. Bar color = cycle phase.
+function PainChart({ history, profile, uk }) {
+  const series = calcPainSeries(history, profile, 30)
+  const total  = series.reduce((s, x) => s + x.pain, 0)
+  const phaseColors = { menstrual: "#9B8FE8", follicular: "#4ECBA8", ovulation: "#4A9EDF", luteal: "#F59E3F" }
+  const W = 320, H = 148
+  const padL = 28, padR = 12, padT = 14, padB = 24
+  const cw = W - padL - padR
+  const ch = H - padT - padB
+  const yMax = Math.max(3, ...series.map(x => x.pain))
+  const barW = cw / series.length
+
+  return (
+    <div style={{ ...S.card, padding: "16px 14px 14px", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#1A2433", textTransform: "uppercase", letterSpacing: "0.7px" }}>
+          {uk ? "Біль за 30 днів" : "Pain · last 30 days"}
+        </div>
+        <div style={{ fontSize: 11, color: "#6B7A8D" }}>
+          {total} {uk ? "відміток" : "marks"}
+        </div>
+      </div>
+
+      {total === 0 ? (
+        <div style={{ fontSize: 12.5, color: "#6B7A8D", padding: "20px 4px", textAlign: "center", lineHeight: 1.55 }}>
+          {uk
+            ? "Поки немає записів про біль. Логуй симптоми в check-in — побачиш патерн по фазах."
+            : "No pain logged yet. Log symptoms in check-in to see the per-phase pattern."}
+        </div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
+          {[0, 0.5, 1].map(t => (
+            <line key={t} x1={padL} y1={padT + ch * (1 - t)} x2={W - padR} y2={padT + ch * (1 - t)} stroke="rgba(107,122,141,0.12)" strokeWidth="1" />
+          ))}
+          <text x={padL - 6} y={padT + 4}      fontSize="9" fill="#8B96A8" textAnchor="end" fontFamily="inherit">{yMax}</text>
+          <text x={padL - 6} y={padT + ch + 3} fontSize="9" fill="#8B96A8" textAnchor="end" fontFamily="inherit">0</text>
+
+          {series.map((d, i) => {
+            const h = (d.pain / yMax) * ch
+            const x = padL + i * barW + 1
+            const color = d.phase ? phaseColors[d.phase] : "#C7D0DC"
+            const isPeriod = d.phase === "menstrual"
+            return (
+              <rect
+                key={d.date}
+                x={x} y={padT + ch - h}
+                width={Math.max(1, barW - 2)} height={Math.max(0, h)}
+                fill={color} opacity={d.pain === 0 ? 0 : isPeriod ? 1 : 0.6} rx="1.5"
+              />
+            )
+          })}
+
+          {[0, 7, 14, 21, 29].map(i => {
+            const ds = series[i]?.date
+            if (!ds) return null
+            const day = parseInt(ds.slice(8, 10))
+            const x = padL + i * barW + barW / 2
+            return (
+              <text key={i} x={x} y={padT + ch + 14} fontSize="9" fill="#8B96A8" textAnchor="middle" fontFamily="inherit">
+                {day}
+              </text>
+            )
+          })}
+        </svg>
+      )}
+
+      <div style={{ fontSize: 10, color: "#8B96A8", marginTop: 8, lineHeight: 1.45 }}>
+        {uk
+          ? "Стовпчик — кількість відміток болю в check-in за день. Колір — фаза циклу. Менструальні дні насиченіші."
+          : "Each bar — pain markers logged in check-in that day. Color shows cycle phase. Menstrual days are saturated."}
+      </div>
+    </div>
+  )
+}
+
+// P1.5 — Average energy by cycle phase across all check-ins.
+function EnergyByPhaseChart({ history, profile, uk }) {
+  const data = calcEnergyByPhase(history, profile)
+  const totalN = data.reduce((s, x) => s + x.n, 0)
+  const phaseColors = { menstrual: "#9B8FE8", follicular: "#4ECBA8", ovulation: "#4A9EDF", luteal: "#F59E3F" }
+  const phaseLabels = {
+    menstrual:  { en: "Menstr.",  uk: "Менстр." },
+    follicular: { en: "Follic.",  uk: "Фолік." },
+    ovulation:  { en: "Ovul.",    uk: "Овул." },
+    luteal:     { en: "Luteal",   uk: "Лютеїн." },
+  }
+  const W = 320, H = 168
+  const padL = 32, padR = 12, padT = 16, padB = 38
+  const cw = W - padL - padR
+  const ch = H - padT - padB
+  const yMax = 10
+  const slot = cw / data.length
+  const barW = slot * 0.55
+
+  return (
+    <div style={{ ...S.card, padding: "16px 14px 14px", marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#1A2433", textTransform: "uppercase", letterSpacing: "0.7px" }}>
+          {uk ? "Енергія по фазах" : "Energy by phase"}
+        </div>
+        <div style={{ fontSize: 11, color: "#6B7A8D" }}>
+          {totalN} {uk ? "check-in" : "check-ins"}
+        </div>
+      </div>
+
+      {totalN === 0 ? (
+        <div style={{ fontSize: 12.5, color: "#6B7A8D", padding: "20px 4px", textAlign: "center", lineHeight: 1.55 }}>
+          {uk
+            ? "Зроби кілька check-in щоб побачити середню енергію по фазах."
+            : "Log a few check-ins to see avg energy per phase."}
+        </div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
+          {[0, 0.5, 1].map(t => (
+            <line key={t} x1={padL} y1={padT + ch * (1 - t)} x2={W - padR} y2={padT + ch * (1 - t)} stroke="rgba(107,122,141,0.12)" strokeWidth="1" />
+          ))}
+          <text x={padL - 6} y={padT + 4}      fontSize="9" fill="#8B96A8" textAnchor="end" fontFamily="inherit">100%</text>
+          <text x={padL - 6} y={padT + ch / 2 + 3} fontSize="9" fill="#8B96A8" textAnchor="end" fontFamily="inherit">50%</text>
+          <text x={padL - 6} y={padT + ch + 3} fontSize="9" fill="#8B96A8" textAnchor="end" fontFamily="inherit">0</text>
+
+          {data.map((d, i) => {
+            const h = (d.avg / yMax) * ch
+            const x = padL + i * slot + (slot - barW) / 2
+            const color = phaseColors[d.phase]
+            return (
+              <g key={d.phase}>
+                <rect
+                  x={x} y={padT + ch - h} width={barW} height={Math.max(0, h)}
+                  fill={color} opacity={d.n ? 1 : 0.16} rx="3"
+                />
+                {d.n > 0 && (
+                  <text x={x + barW / 2} y={padT + ch - h - 5} fontSize="10" fontWeight="700" fill="#1A2433" textAnchor="middle" fontFamily="inherit">
+                    {Math.round(d.avg * 10)}%
+                  </text>
+                )}
+                <text x={x + barW / 2} y={padT + ch + 14} fontSize="10" fill="#6B7A8D" textAnchor="middle" fontFamily="inherit">
+                  {uk ? phaseLabels[d.phase].uk : phaseLabels[d.phase].en}
+                </text>
+                <text x={x + barW / 2} y={padT + ch + 26} fontSize="9" fill="#8B96A8" textAnchor="middle" fontFamily="inherit">
+                  n={d.n}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      )}
+
+      <div style={{ fontSize: 10, color: "#8B96A8", marginTop: 8, lineHeight: 1.45 }}>
+        {uk
+          ? "Середнє значення повзунка енергії (1–10) у check-in, згруповано за фазою циклу на момент запису."
+          : "Average energy slider (1–10) per cycle phase, grouped by phase on the day of each check-in."}
+      </div>
+    </div>
+  )
+}
+
 // ─── SCREEN 8: PROGRESS — CYCLE CALENDAR ─────────────────────────────────────
-function ProgressScreen({ profile, setProfile, lang, onBack }) {
+function ProgressScreen({ profile, setProfile, history, lang, onBack }) {
   const uk = lang === "uk"
   const [selectedDay, setSelectedDay] = useState(null)
   const [dateInput, setDateInput] = useState("")
+  const [editOpen, setEditOpen] = useState(false)
+  const [newPeriodInput, setNewPeriodInput] = useState("")
 
-  const hasDate = !!profile.lastPeriodDate
+  const periods = getPeriods(profile)
+  const latestDate = periods[0] || ""
+  const hasDate = !!latestDate
   const cycleLength = parseInt(profile.cycleLength) || 28
-  const days = hasDate ? getCalendarDays(profile.lastPeriodDate, cycleLength) : []
+  const days = hasDate ? getCalendarDays(latestDate, cycleLength) : []
+
+  // P1.4 — write periods array (newest first) and keep lastPeriodDate in sync for backwards compat
+  function savePeriods(arr) {
+    const sorted = [...new Set(arr.filter(Boolean))].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+    setProfile({ ...profile, vive_periods: sorted, lastPeriodDate: sorted[0] || "" })
+  }
+  function addPeriod(d) {
+    if (!d) return
+    savePeriods([...(profile.vive_periods || []), d])
+    setNewPeriodInput("")
+  }
+  function removePeriod(d) {
+    savePeriods((profile.vive_periods || periods).filter(x => x !== d))
+  }
 
   const phaseColors = { menstrual: "#9B8FE8", follicular: "#4ECBA8", ovulation: "#4A9EDF", luteal: "#F59E3F" }
 
@@ -2633,7 +3384,7 @@ function ProgressScreen({ profile, setProfile, lang, onBack }) {
         <input type="date" value={dateInput} max={todayStr()} onChange={e => setDateInput(e.target.value)} style={{ ...inputStyle, marginBottom: 20 }} />
         <button
           disabled={!dateInput}
-          onClick={() => { const p = { ...profile, lastPeriodDate: dateInput }; setProfile(p) }}
+          onClick={() => addPeriod(dateInput)}
           style={{ ...S.btnPrimary, opacity: dateInput ? 1 : 0.4 }}
         >
           {uk ? "Показати мій цикл →" : "Show my cycle →"}
@@ -2651,13 +3402,22 @@ function ProgressScreen({ profile, setProfile, lang, onBack }) {
 
       <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "52px 24px 16px" }}>
         <BackBtn onClick={onBack} />
-        <div>
+        <div style={{ flex: 1 }}>
           <h2 style={{ fontSize: 24, fontWeight: 900, margin: 0, letterSpacing: "-0.5px" }}>{uk ? "Мій цикл" : "My Cycle"}</h2>
           <div style={{ fontSize: 13, color: "#6B7A8D" }}>{uk ? `${cycleLength}-денний цикл` : `${cycleLength}-day cycle`}</div>
         </div>
+        <button
+          onClick={() => setEditOpen(true)}
+          style={{ background: "rgba(74,158,223,0.09)", border: "1px solid rgba(74,158,223,0.22)", borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 700, color: "#4A9EDF", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5 }}
+        >
+          ✏️ {uk ? "Редагувати" : "Edit period"}
+        </button>
       </div>
 
       <div style={{ position: "relative", zIndex: 1, flex: 1, overflowY: "auto", padding: "0 24px 100px" }}>
+
+        {/* Hormone curves (P1.1) */}
+        <HormoneCurvesChart cycleDay={calcCycleDay(profile)} cycleLength={cycleLength} uk={uk} />
 
         {/* Legend */}
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
@@ -2727,28 +3487,146 @@ function ProgressScreen({ profile, setProfile, lang, onBack }) {
             {uk ? "Натисни на день щоб побачити рекомендації" : "Tap a day to see recommendations"}
           </p>
         )}
+
+        {/* P1.5 — Pain & Energy charts */}
+        <div style={{ marginTop: 22 }}>
+          <PainChart history={history} profile={profile} uk={uk} />
+          <EnergyByPhaseChart history={history} profile={profile} uk={uk} />
+        </div>
       </div>
 
       <BottomNav active="progress" onCheckIn={() => {}} onProgress={null} onChat={() => {}} onHome={onBack} uk={uk} />
+
+      {/* P1.4 — Edit Period modal */}
+      {editOpen && (
+        <div
+          onClick={() => setEditOpen(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(26,36,51,0.42)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 480, background: "#F5F9FF", borderRadius: "24px 24px 0 0", padding: "20px 22px 32px", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 -10px 40px rgba(74,158,223,0.18)" }}
+          >
+            <div style={{ width: 40, height: 4, background: "rgba(107,122,141,0.3)", borderRadius: 4, margin: "0 auto 16px" }} />
+
+            <h3 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 6px", letterSpacing: "-0.3px" }}>
+              {uk ? "Редагувати дати циклу" : "Edit period dates"}
+            </h3>
+            <p style={{ fontSize: 13, color: "#6B7A8D", margin: "0 0 18px", lineHeight: 1.5 }}>
+              {uk
+                ? "Додавай дати початку минулих менструацій. Точніші записи — точніший прогноз фази."
+                : "Log start dates of past periods. The more entries, the better the phase prediction."}
+            </p>
+
+            {/* Past periods list */}
+            <div style={{ fontSize: 11, fontWeight: 800, color: "#6B7A8D", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>
+              {uk ? "Попередні дати" : "Logged dates"}
+            </div>
+            {periods.length === 0 ? (
+              <div style={{ fontSize: 13, color: "#8B96A8", padding: "12px 14px", background: "rgba(255,255,255,0.6)", borderRadius: 12, marginBottom: 16 }}>
+                {uk ? "Поки немає записів." : "No entries yet."}
+              </div>
+            ) : (
+              <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+                {periods.map((d, i) => (
+                  <div key={d} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(255,255,255,0.78)", borderRadius: 12, border: "1px solid rgba(74,158,223,0.12)" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#1A2433" }}>{d}</div>
+                      {i === 0 && (
+                        <div style={{ fontSize: 10, fontWeight: 800, color: "#4ECBA8", textTransform: "uppercase", letterSpacing: "0.6px", marginTop: 2 }}>
+                          {uk ? "Поточний цикл" : "Current cycle"}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => removePeriod(d)}
+                      style={{ background: "rgba(245,158,63,0.1)", border: "1px solid rgba(245,158,63,0.25)", color: "#F59E3F", borderRadius: 10, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      {uk ? "Видалити" : "Remove"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new period */}
+            <div style={{ fontSize: 11, fontWeight: 800, color: "#6B7A8D", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>
+              {uk ? "Додати дату" : "Add a date"}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+              <input
+                type="date"
+                value={newPeriodInput}
+                max={todayStr()}
+                onChange={e => setNewPeriodInput(e.target.value)}
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <button
+                disabled={!newPeriodInput || periods.includes(newPeriodInput)}
+                onClick={() => addPeriod(newPeriodInput)}
+                style={{ ...S.btnPrimary, width: "auto", padding: "0 22px", fontSize: 14, opacity: !newPeriodInput || periods.includes(newPeriodInput) ? 0.4 : 1 }}
+              >
+                {uk ? "Додати" : "Add"}
+              </button>
+            </div>
+
+            <button onClick={() => setEditOpen(false)} style={S.btnGhost}>
+              {uk ? "Готово" : "Done"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── PROFILE SCREEN ───────────────────────────────────────────────────────────
-function ProfileScreen({ profile, onBack, onReset, lang }) {
+function ProfileScreen({ profile, setProfile, onBack, onReset, lang }) {
   const uk = lang === "uk"
+  const L  = uk ? "uk" : "en"
   const [confirm, setConfirm] = useState(false)
   const cycleDay = calcCycleDay(profile)
   const phaseKey = getPhase(cycleDay, parseInt(profile.cycleLength) || 28)
   const phaseRec = PHASE_RECS[phaseKey]
 
-  // Notification opt-in (P0.4)
+  // Notification opt-in (P0.4 milestone + P1.7 phase/period)
   const [pushOn,  setPushOn]  = useState(() => lsGet("vive_notify_push", false))
   const [emailOn, setEmailOn] = useState(() => lsGet("vive_notify_email_on", false))
   const [email,   setEmail]   = useState(() => lsGet("vive_notify_email", ""))
+  const [phaseNotif,  setPhaseNotif]  = useState(() => lsGet("vive_notify_phase_change", false))
+  const [periodNotif, setPeriodNotif] = useState(() => lsGet("vive_notify_period_prediction", false))
   const [pushBusy, setPushBusy] = useState(false)
   const [pushErr,  setPushErr]  = useState("")
   const pushSupported = typeof window !== "undefined" && "Notification" in window && "serviceWorker" in navigator
+
+  // P1.6 — Personal info form (dietary / activity / limitations / allergies / dislikes)
+  const info = profile.personalInfo || {}
+  const [piOpen,        setPiOpen]        = useState(false)
+  const [piDietary,     setPiDietary]     = useState(info.dietary     || "")
+  const [piActivity,    setPiActivity]    = useState(info.activity    || "")
+  const [piLimitations, setPiLimitations] = useState(info.limitations || [])
+  const [piAllergies,   setPiAllergies]   = useState(info.allergies   || "")
+  const [piDislikes,    setPiDislikes]    = useState(info.dislikes    || "")
+  const [piSaved,       setPiSaved]       = useState(false)
+
+  function savePersonalInfo() {
+    const next = {
+      dietary:     piDietary,
+      activity:    piActivity,
+      limitations: piLimitations,
+      allergies:   piAllergies.trim(),
+      dislikes:    piDislikes.trim(),
+    }
+    setProfile({ ...profile, personalInfo: next })
+    setPiSaved(true)
+    setTimeout(() => setPiSaved(false), 1800)
+  }
+
+  const piSummary = [
+    piDietary && (PERSONAL_INFO_OPTIONS.dietary.find(o => o.id === piDietary)?.[L] || ""),
+    piActivity && (PERSONAL_INFO_OPTIONS.activity.find(o => o.id === piActivity)?.[L]?.split(" — ")[0] || ""),
+    piLimitations.length ? (uk ? `${piLimitations.length} обмежень` : `${piLimitations.length} limitations`) : "",
+  ].filter(Boolean).join(" · ") || (uk ? "Не задано" : "Not set")
 
   async function togglePush() {
     setPushErr("")
@@ -2771,6 +3649,16 @@ function ProfileScreen({ profile, onBack, onReset, lang }) {
 
   function saveEmail(v) {
     setEmail(v); lsSet("vive_notify_email", v)
+  }
+
+  function togglePhaseNotif() {
+    const next = !phaseNotif
+    setPhaseNotif(next); lsSet("vive_notify_phase_change", next)
+  }
+
+  function togglePeriodNotif() {
+    const next = !periodNotif
+    setPeriodNotif(next); lsSet("vive_notify_period_prediction", next)
   }
 
   return (
@@ -2820,15 +3708,116 @@ function ProfileScreen({ profile, onBack, onReset, lang }) {
           ))}
         </Card>
 
-        {/* Notifications opt-in (P0.4 — milestones 30/60/90) */}
+        {/* P1.6 — Personal info (dietary / activity / limitations / allergies / dislikes) */}
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#6B7A8D", letterSpacing: "0.8px", textTransform: "uppercase", margin: "8px 4px 8px" }}>
+          {uk ? "ОСОБИСТА ІНФОРМАЦІЯ" : "PERSONAL INFO"}
+        </div>
+        <Card style={{ marginBottom: 16 }}>
+          <button onClick={() => setPiOpen(o => !o)} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+            background: "transparent", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+          }}>
+            <div style={{ flex: 1, paddingRight: 12 }}>
+              <div style={{ fontSize: 13, color: "#6B7A8D", marginBottom: 2 }}>
+                {uk ? "Дієта · активність · обмеження" : "Diet · activity · limitations"}
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#1A2433" }}>
+                {piSummary}
+              </div>
+            </div>
+            <div style={{ fontSize: 18, color: "#6B7A8D", transform: piOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</div>
+          </button>
+
+          {piOpen && (
+            <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(74,158,223,0.1)" }}>
+              <div style={{ fontSize: 13, color: "#6B7A8D", lineHeight: 1.5, marginBottom: 14 }}>
+                {uk
+                  ? "Допомагає Alex налаштувати рекомендації — наприклад, виключити сауну при серцевих проблемах або фастинг при діабеті."
+                  : "Helps Alex tailor recs — e.g. skip sauna for cardiac issues or fasting for diabetes."}
+              </div>
+
+              {/* Dietary */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#1A2433", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+                {uk ? "Стиль харчування" : "Dietary needs"}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+                {PERSONAL_INFO_OPTIONS.dietary.map(o => (
+                  <Chip key={o.id} active={piDietary === o.id} onClick={() => setPiDietary(piDietary === o.id ? "" : o.id)}>
+                    {o[L]}
+                  </Chip>
+                ))}
+              </div>
+
+              {/* Activity */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#1A2433", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+                {uk ? "Рівень активності" : "Activity level"}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+                {PERSONAL_INFO_OPTIONS.activity.map(o => (
+                  <Chip key={o.id} active={piActivity === o.id} onClick={() => setPiActivity(piActivity === o.id ? "" : o.id)} style={{ textAlign: "left" }}>
+                    {o[L]}
+                  </Chip>
+                ))}
+              </div>
+
+              {/* Physical limitations */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#1A2433", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+                {uk ? "Фізичні обмеження" : "Physical limitations"}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+                {PERSONAL_INFO_OPTIONS.limitations.map(o => (
+                  <Chip key={o.id} active={piLimitations.includes(o.id)} onClick={() => setPiLimitations(toggle(piLimitations, o.id))}>
+                    {o[L]}
+                  </Chip>
+                ))}
+              </div>
+
+              {/* Allergies */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#1A2433", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+                {uk ? "Алергії" : "Allergies"}
+              </div>
+              <input
+                value={piAllergies}
+                onChange={(e) => setPiAllergies(e.target.value)}
+                placeholder={uk ? "напр. горіхи, лактоза, пилок" : "e.g. nuts, lactose, pollen"}
+                style={{
+                  width: "100%", padding: "10px 14px", borderRadius: 12, fontSize: 14, fontFamily: "inherit",
+                  border: "1.5px solid rgba(107,122,141,0.18)", background: "rgba(255,255,255,0.7)",
+                  color: "#1A2433", outline: "none", marginBottom: 12,
+                }}
+              />
+
+              {/* Food dislikes */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#1A2433", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+                {uk ? "Не люблю продукти" : "Food dislikes"}
+              </div>
+              <input
+                value={piDislikes}
+                onChange={(e) => setPiDislikes(e.target.value)}
+                placeholder={uk ? "напр. брокколі, риба, печінка" : "e.g. broccoli, fish, liver"}
+                style={{
+                  width: "100%", padding: "10px 14px", borderRadius: 12, fontSize: 14, fontFamily: "inherit",
+                  border: "1.5px solid rgba(107,122,141,0.18)", background: "rgba(255,255,255,0.7)",
+                  color: "#1A2433", outline: "none", marginBottom: 16,
+                }}
+              />
+
+              <button onClick={savePersonalInfo} style={{ ...S.btnPrimary, padding: "12px 18px", fontSize: 14 }}>
+                {piSaved ? (uk ? "✓ Збережено" : "✓ Saved") : (uk ? "Зберегти" : "Save")}
+              </button>
+            </div>
+          )}
+        </Card>
+
+        {/* Notifications opt-in (P0.4 — milestones 30/60/90; P1.7 — phase + period) */}
         <div style={{ fontSize: 11, fontWeight: 800, color: "#6B7A8D", letterSpacing: "0.8px", textTransform: "uppercase", margin: "8px 4px 8px" }}>
           {uk ? "СПОВІЩЕННЯ" : "NOTIFICATIONS"}
         </div>
         <Card style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 13, color: "#6B7A8D", lineHeight: 1.5, marginBottom: 14 }}>
             {uk
-              ? "Сповіщаємо коли ти сягнеш 30, 60 чи 90 днів стріку — з топ-3 метриками, що покращились."
-              : "We'll ping you at 30, 60, and 90-day streaks — with the top 3 metrics that improved."}
+              ? "Milestone-стрік (30/60/90), зміна фази циклу, прогноз менструації — обери, що корисно."
+              : "Milestone streaks (30/60/90), cycle phase changes, period prediction — pick what helps."}
           </div>
 
           {/* Push toggle */}
@@ -2884,6 +3873,45 @@ function ProfileScreen({ profile, onBack, onReset, lang }) {
                 color: "#1A2433", outline: "none",
               }}
             />
+          )}
+
+          {/* P1.7 — Phase change push */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 14, marginTop: 14, borderTop: "1px solid rgba(74,158,223,0.08)" }}>
+            <div style={{ flex: 1, paddingRight: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#1A2433" }}>{uk ? "Зміна фази циклу" : "Cycle phase change"}</div>
+              <div style={{ fontSize: 11, color: "#6B7A8D", marginTop: 2 }}>
+                {uk ? "Push коли заходиш у нову фазу" : "Push when entering a new phase"}
+              </div>
+            </div>
+            <button onClick={togglePhaseNotif} disabled={!pushOn} aria-label="toggle phase notif" style={{
+              width: 46, height: 26, borderRadius: 14, border: "none", cursor: pushOn ? "pointer" : "not-allowed",
+              background: phaseNotif && pushOn ? "#4ECBA8" : "rgba(107,122,141,0.25)", position: "relative", transition: "background .2s",
+              fontFamily: "inherit", padding: 0, flexShrink: 0, opacity: pushOn ? 1 : 0.5,
+            }}>
+              <span style={{ position: "absolute", top: 3, left: phaseNotif && pushOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left .2s" }} />
+            </button>
+          </div>
+
+          {/* P1.7 — Period prediction push */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 14, marginTop: 14, borderTop: "1px solid rgba(74,158,223,0.08)" }}>
+            <div style={{ flex: 1, paddingRight: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#1A2433" }}>{uk ? "Прогноз менструації" : "Period prediction"}</div>
+              <div style={{ fontSize: 11, color: "#6B7A8D", marginTop: 2 }}>
+                {uk ? "Push за 2 дні до прогнозованого початку" : "Push 2 days before predicted start"}
+              </div>
+            </div>
+            <button onClick={togglePeriodNotif} disabled={!pushOn} aria-label="toggle period notif" style={{
+              width: 46, height: 26, borderRadius: 14, border: "none", cursor: pushOn ? "pointer" : "not-allowed",
+              background: periodNotif && pushOn ? "#4ECBA8" : "rgba(107,122,141,0.25)", position: "relative", transition: "background .2s",
+              fontFamily: "inherit", padding: 0, flexShrink: 0, opacity: pushOn ? 1 : 0.5,
+            }}>
+              <span style={{ position: "absolute", top: 3, left: periodNotif && pushOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left .2s" }} />
+            </button>
+          </div>
+          {!pushOn && (phaseNotif || periodNotif) && (
+            <div style={{ fontSize: 11, color: "#6B7A8D", marginTop: 10, fontStyle: "italic" }}>
+              {uk ? "Увімкни push-сповіщення вище, щоб ці тригери спрацьовували." : "Turn on push notifications above for these triggers to fire."}
+            </div>
           )}
         </Card>
 
@@ -2963,10 +3991,10 @@ export default function App() {
     <BodyAudit profile={profile} setProfile={saveProfile} lang={lang} onDone={() => setScreen("paywall")} />
   )
   if (screen === "paywall") return (
-    <PaywallScreen profile={profile} lang={lang} onBack={() => setScreen("audit")} onContinueFree={() => setScreen("report")} />
+    <PaywallScreen profile={profile} history={history} lang={lang} onBack={() => setScreen("audit")} onContinueFree={() => setScreen("report")} />
   )
   if (screen === "report") return (
-    <ReportScreen profile={profile} lang={lang} onDone={() => setScreen("dashboard")} onChat={() => setScreen("chat")} />
+    <ReportScreen profile={profile} history={history} lang={lang} onDone={() => setScreen("dashboard")} onChat={() => setScreen("chat")} />
   )
   if (screen === "dashboard") return (
     <DashboardScreen profile={profile} history={history} lang={lang}
@@ -2981,10 +4009,10 @@ export default function App() {
     <CheckInScreen history={history} setHistory={setHistory} lang={lang} onBack={() => setScreen("dashboard")} />
   )
   if (screen === "progress") return (
-    <ProgressScreen profile={profile} setProfile={saveProfile} lang={lang} onBack={() => setScreen("dashboard")} />
+    <ProgressScreen profile={profile} setProfile={saveProfile} history={history} lang={lang} onBack={() => setScreen("dashboard")} />
   )
   if (screen === "profile") return (
-    <ProfileScreen profile={profile} lang={lang} onBack={() => setScreen("dashboard")} onReset={handleReset} />
+    <ProfileScreen profile={profile} setProfile={saveProfile} lang={lang} onBack={() => setScreen("dashboard")} onReset={handleReset} />
   )
   return null
 }
